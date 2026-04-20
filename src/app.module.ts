@@ -9,6 +9,8 @@ import { AiModule } from './application/ai/ai.module';
 import { SubscriptionModule } from './application/subscription/subscription.module';
 import { ProgressModule } from './application/progress/progress.module';
 import { VocabularyModule } from './application/vocabulary/vocabulary.module';
+import { NotificationsModule } from './application/notifications/notifications.module';
+import { RedisModule } from './infrastructure/redis/redis.module';
 import { UserEntity } from './domain/entities/user.entity';
 import { TopicEntity } from './domain/entities/topic.entity';
 import { QuizQuestionEntity } from './domain/entities/quiz-question.entity';
@@ -16,6 +18,7 @@ import { SubscriptionEntity } from './domain/entities/subscription.entity';
 import { VocabularyItemEntity } from './domain/entities/vocabulary-item.entity';
 import { UserProgressEntity } from './domain/entities/user-progress.entity';
 import { DailyStreakEntity } from './domain/entities/daily-streak.entity';
+import { WordEntity } from './domain/entities/word.entity';
 
 @Module({
   imports: [
@@ -24,7 +27,6 @@ import { DailyStreakEntity } from './domain/entities/daily-streak.entity';
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => {
-        // Railway DATABASE_URL'sini kullan, yoksa manual parametreler
         const databaseUrl = configService.get('DATABASE_URL');
 
         const config: any = {
@@ -37,6 +39,7 @@ import { DailyStreakEntity } from './domain/entities/daily-streak.entity';
             VocabularyItemEntity,
             UserProgressEntity,
             DailyStreakEntity,
+            WordEntity,
           ],
           synchronize: configService.get('NODE_ENV') !== 'production',
           logging: configService.get('NODE_ENV') === 'development',
@@ -60,12 +63,16 @@ import { DailyStreakEntity } from './domain/entities/daily-streak.entity';
     ThrottlerModule.forRoot([{ ttl: 60000, limit: 100 }]),
     ScheduleModule.forRoot(),
 
+    // Redis (global — available to all modules)
+    RedisModule,
+
     AuthModule,
     TopicsModule,
     AiModule,
     SubscriptionModule,
     ProgressModule,
     VocabularyModule,
+    NotificationsModule,
   ],
 })
 export class AppModule {}

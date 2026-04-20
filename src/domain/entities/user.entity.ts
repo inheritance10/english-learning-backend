@@ -55,6 +55,27 @@ export class UserEntity {
   @Column({ default: false })
   onboardingCompleted: boolean;
 
+  // ─── Word Booster / Hourly Notification ─────────────────────────
+  /** Whether the user has enabled hourly word notifications */
+  @Column({ default: false })
+  isWordNotificationEnabled: boolean;
+
+  /** CEFR level for word notifications (defaults to user cefrLevel) */
+  @Column({ nullable: true })
+  notificationLevel: string;
+
+  /** Firebase Cloud Messaging device token */
+  @Column({ nullable: true })
+  fcmToken: string;
+
+  /** Quiet hours start — "HH:mm" format e.g. "23:00" */
+  @Column({ nullable: true })
+  quietHoursStart: string;
+
+  /** Quiet hours end — "HH:mm" format e.g. "08:00" */
+  @Column({ nullable: true })
+  quietHoursEnd: string;
+
   @OneToMany(() => SubscriptionEntity, (sub) => sub.user, { eager: false })
   subscriptions: SubscriptionEntity[];
 

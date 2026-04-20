@@ -1,24 +1,68 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Inject, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import Redis from 'ioredis';
 import { TopicEntity } from '../../../domain/entities/topic.entity';
+import { REDIS_CLIENT } from '../../../infrastructure/redis/redis.module';
 
 export interface TopicFilter {
   category?: string;
   cefrLevel?: string;
   language?: string;
+  search?: string;
+  page?: number;
+  limit?: number;
 }
+
+export interface PaginatedTopics {
+  data: TopicEntity[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
+const TOPICS_TTL = 300; // 5 minutes
 
 @Injectable()
 export class GetTopicsUseCase {
+  private readonly logger = new Logger(GetTopicsUseCase.name);
+
   constructor(
     @InjectRepository(TopicEntity)
     private readonly topicRepo: Repository<TopicEntity>,
+    @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {}
 
-  async execute(filter: TopicFilter) {
+  async execute(filter: TopicFilter): Promise<PaginatedTopics> {
+    const page = filter.page ?? 1;
+    const limit = Math.min(filter.limit ?? 50, 100);
+    const offset = (page - 1) * limit;
+
+    // Redis cache — skip for search queries (too dynamic)
+    const cacheKey = filter.search
+      ? null
+      : `topics:${filter.cefrLevel ?? 'all'}:${filter.category ?? 'all'}:${filter.language ?? 'en'}:p${page}:l${limit}`;
+
+    if (cacheKey) {
+      try {
+        const cached = await this.redis.get(cacheKey);
+        if (cached) {
+          this.logger.debug(`Cache hit: ${cacheKey}`);
+          return JSON.parse(cached);
+        }
+      } catch {
+        // Redis unavailable — fall through to DB
+      }
+    }
+
     const query = this.topicRepo.createQueryBuilder('topic')
-      .where('topic.isActive = :active', { active: true });
+      .where('topic.isActive = :active', { active: true })
+      .select([
+        'topic.id', 'topic.name', 'topic.description', 'topic.category',
+        'topic.cefrLevel', 'topic.cefrJLevel', 'topic.language',
+        'topic.estimatedMinutes', 'topic.icon', 'topic.orderIndex', 'topic.isPremium',
+      ]);
 
     if (filter.category) {
       query.andWhere('topic.category = :category', { category: filter.category });
@@ -29,27 +73,51 @@ export class GetTopicsUseCase {
     if (filter.language) {
       query.andWhere('topic.language = :lang', { lang: filter.language });
     }
+    if (filter.search) {
+      query.andWhere(
+        '(LOWER(topic.name) LIKE :search OR LOWER(topic.description) LIKE :search)',
+        { search: `%${filter.search.toLowerCase()}%` },
+      );
+    }
 
-    return query.orderBy('topic.orderIndex', 'ASC').getMany();
+    const [data, total] = await query
+      .orderBy('topic.orderIndex', 'ASC')
+      .skip(offset)
+      .take(limit)
+      .getManyAndCount();
+
+    const result: PaginatedTopics = {
+      data,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
+
+    // Store in cache
+    if (cacheKey) {
+      this.redis.setex(cacheKey, TOPICS_TTL, JSON.stringify(result)).catch(() => null);
+    }
+
+    return result;
   }
 
   async getCategories(language = 'en') {
     const result = await this.topicRepo
       .createQueryBuilder('topic')
-      .select('DISTINCT topic.category', 'category')
+      .select('topic.category', 'category')
       .addSelect('COUNT(topic.id)', 'count')
       .where('topic.isActive = :active', { active: true })
       .andWhere('topic.language = :lang', { lang: language })
       .groupBy('topic.category')
       .getRawMany();
 
-    // Return hardcoded categories with counts
     return [
-      { key: 'grammar', label: 'Grammar', icon: 'BookOpen', count: result.find(r => r.category === 'grammar')?.count ?? 0 },
-      { key: 'vocabulary', label: 'Vocabulary', icon: 'Type', count: result.find(r => r.category === 'vocabulary')?.count ?? 0 },
-      { key: 'business', label: 'Business', icon: 'Briefcase', count: result.find(r => r.category === 'business')?.count ?? 0 },
-      { key: 'conversation', label: 'Conversation', icon: 'MessageCircle', count: result.find(r => r.category === 'conversation')?.count ?? 0 },
-      { key: 'writing', label: 'Writing', icon: 'PenTool', count: result.find(r => r.category === 'writing')?.count ?? 0 },
+      { key: 'grammar', label: 'Grammar', icon: 'BookOpen', count: Number(result.find(r => r.category === 'grammar')?.count ?? 0) },
+      { key: 'vocabulary', label: 'Vocabulary', icon: 'Type', count: Number(result.find(r => r.category === 'vocabulary')?.count ?? 0) },
+      { key: 'business', label: 'Business', icon: 'Briefcase', count: Number(result.find(r => r.category === 'business')?.count ?? 0) },
+      { key: 'conversation', label: 'Conversation', icon: 'MessageCircle', count: Number(result.find(r => r.category === 'conversation')?.count ?? 0) },
+      { key: 'writing', label: 'Writing', icon: 'PenTool', count: Number(result.find(r => r.category === 'writing')?.count ?? 0) },
     ];
   }
 
