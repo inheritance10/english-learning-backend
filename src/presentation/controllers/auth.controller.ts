@@ -67,6 +67,7 @@ export class AuthController {
       isSubscribed: user.isSubscribed,
       isTestUser: user.isTestUser,
       trialEndsAt: user.trialEndsAt,
+      totalTokens: user.totalTokens,
       createdAt: user.createdAt,
     };
   }

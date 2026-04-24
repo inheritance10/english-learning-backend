@@ -24,6 +24,10 @@ export class DailyStreakEntity {
   @Column({ nullable: true })
   lastActiveDate: string;
 
+  /** Whether the daily reward has been claimed */
+  @Column({ default: false })
+  dailyRewardClaimed: boolean;
+
   @CreateDateColumn()
   createdAt: Date;
 

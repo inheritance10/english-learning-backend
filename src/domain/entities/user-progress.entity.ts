@@ -27,6 +27,9 @@ export class UserProgressEntity {
   xpEarned: number;
 
   @Column({ default: 0 })
+  tokensEarned: number;
+
+  @Column({ default: 0 })
   questionsAnswered: number;
 
   @Column({ default: 0 })

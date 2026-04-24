@@ -10,6 +10,7 @@ import { SubscriptionEntity } from './subscription.entity';
 import { VocabularyItemEntity } from './vocabulary-item.entity';
 import { UserProgressEntity } from './user-progress.entity';
 import { DailyStreakEntity } from './daily-streak.entity';
+import { UserCompletedTopicEntity } from './user-completed-topic.entity';
 
 @Entity('users')
 export class UserEntity {
@@ -55,6 +56,10 @@ export class UserEntity {
   @Column({ default: false })
   onboardingCompleted: boolean;
 
+  /** Total tokens earned by user from correct answers */
+  @Column({ default: 0 })
+  totalTokens: number;
+
   // ─── Word Booster / Hourly Notification ─────────────────────────
   /** Whether the user has enabled hourly word notifications */
   @Column({ default: false })
@@ -63,6 +68,21 @@ export class UserEntity {
   /** CEFR level for word notifications (defaults to user cefrLevel) */
   @Column({ nullable: true })
   notificationLevel: string;
+
+  /** Daily word notification count: 5, 10, or 20 */
+  @Column({ type: 'smallint', default: 5, enum: [5, 10, 20] })
+  wordNotificationCount: number;
+
+  /** Notification frequency: '1m' (dev), '10m', '30m', or '60m' */
+  @Column({ default: '60m', enum: ['1m', '10m', '30m', '60m'] })
+  wordNotificationFrequency: string;
+
+  /**
+   * Date (YYYY-MM-DD) of the last Word Booster schedule run.
+   * Used to prevent duplicate scheduling on repeated cron fires (e.g. dev every-2-min cron).
+   */
+  @Column({ nullable: true })
+  wordBoosterScheduledDate: string;
 
   /** Firebase Cloud Messaging device token */
   @Column({ nullable: true })
@@ -87,6 +107,9 @@ export class UserEntity {
 
   @OneToMany(() => DailyStreakEntity, (streak) => streak.user, { eager: false })
   streaks: DailyStreakEntity[];
+
+  @OneToMany(() => UserCompletedTopicEntity, (completed) => completed.user, { eager: false })
+  completedTopics: UserCompletedTopicEntity[];
 
   @CreateDateColumn()
   createdAt: Date;

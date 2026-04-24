@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
+import { BullModule } from '@nestjs/bullmq';
 import { AuthModule } from './application/auth/auth.module';
 import { TopicsModule } from './application/topics/topics.module';
 import { AiModule } from './application/ai/ai.module';
@@ -19,6 +20,9 @@ import { VocabularyItemEntity } from './domain/entities/vocabulary-item.entity';
 import { UserProgressEntity } from './domain/entities/user-progress.entity';
 import { DailyStreakEntity } from './domain/entities/daily-streak.entity';
 import { WordEntity } from './domain/entities/word.entity';
+import { NotificationEntity } from './domain/entities/notification.entity';
+import { UserSeenWordEntity } from './domain/entities/user-seen-word.entity';
+import { UserCompletedTopicEntity } from './domain/entities/user-completed-topic.entity';
 
 @Module({
   imports: [
@@ -40,6 +44,9 @@ import { WordEntity } from './domain/entities/word.entity';
             UserProgressEntity,
             DailyStreakEntity,
             WordEntity,
+            NotificationEntity,
+            UserSeenWordEntity,
+            UserCompletedTopicEntity,
           ],
           synchronize: configService.get('NODE_ENV') !== 'production',
           logging: configService.get('NODE_ENV') === 'development',
@@ -62,6 +69,19 @@ import { WordEntity } from './domain/entities/word.entity';
 
     ThrottlerModule.forRoot([{ ttl: 60000, limit: 100 }]),
     ScheduleModule.forRoot(),
+
+    // BullMQ — global Redis connection for all queues
+    BullModule.forRootAsync({
+      imports: [ConfigModule],
+      useFactory: (configService: ConfigService) => ({
+        connection: {
+          host: configService.get<string>('REDIS_HOST', 'localhost'),
+          port: configService.get<number>('REDIS_PORT', 6379),
+          password: configService.get<string>('REDIS_PASSWORD') || undefined,
+        },
+      }),
+      inject: [ConfigService],
+    }),
 
     // Redis (global — available to all modules)
     RedisModule,

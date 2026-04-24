@@ -8,8 +8,11 @@ import { CurrentUser } from '../decorators/current-user.decorator';
 import { UserEntity } from '../../domain/entities/user.entity';
 import { FcmNotificationService } from '../../infrastructure/notifications/fcm-notification.service';
 import { WordNotificationScheduler } from '../../application/notifications/word-notification.scheduler';
+import { WORD_COUNT_OPTIONS, FREQUENCY_OPTIONS } from '../../domain/constants/word-booster.constants';
 
 const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
+const WORD_COUNTS = WORD_COUNT_OPTIONS;
+const FREQUENCIES = Object.keys(FREQUENCY_OPTIONS) as Array<keyof typeof FREQUENCY_OPTIONS>;
 
 class UpdateNotificationPrefsDto {
   @IsOptional()
@@ -19,6 +22,14 @@ class UpdateNotificationPrefsDto {
   @IsOptional()
   @IsIn(CEFR_LEVELS)
   notificationLevel?: string;
+
+  @IsOptional()
+  @IsIn(WORD_COUNTS)
+  wordNotificationCount?: number;
+
+  @IsOptional()
+  @IsIn(FREQUENCIES)
+  wordNotificationFrequency?: string;
 
   /** 'HH:mm' format, e.g. "23:00" */
   @IsOptional()
@@ -54,6 +65,8 @@ export class NotificationsController {
     return {
       isWordNotificationEnabled: user.isWordNotificationEnabled,
       notificationLevel: user.notificationLevel ?? user.cefrLevel,
+      wordNotificationCount: user.wordNotificationCount,
+      wordNotificationFrequency: user.wordNotificationFrequency,
       quietHoursStart: user.quietHoursStart,
       quietHoursEnd: user.quietHoursEnd,
       hasFcmToken: !!user.fcmToken,
@@ -72,6 +85,8 @@ export class NotificationsController {
     // Apply changes
     if (dto.isWordNotificationEnabled !== undefined) user.isWordNotificationEnabled = dto.isWordNotificationEnabled;
     if (dto.notificationLevel) user.notificationLevel = dto.notificationLevel;
+    if (dto.wordNotificationCount !== undefined) user.wordNotificationCount = dto.wordNotificationCount;
+    if (dto.wordNotificationFrequency) user.wordNotificationFrequency = dto.wordNotificationFrequency;
     if (dto.quietHoursStart !== undefined) user.quietHoursStart = dto.quietHoursStart;
     if (dto.quietHoursEnd !== undefined) user.quietHoursEnd = dto.quietHoursEnd;
     if (dto.fcmToken) user.fcmToken = dto.fcmToken;
@@ -98,18 +113,19 @@ export class NotificationsController {
     return {
       isWordNotificationEnabled: user.isWordNotificationEnabled,
       notificationLevel: user.notificationLevel ?? user.cefrLevel,
+      wordNotificationCount: user.wordNotificationCount,
+      wordNotificationFrequency: user.wordNotificationFrequency,
       quietHoursStart: user.quietHoursStart,
       quietHoursEnd: user.quietHoursEnd,
     };
   }
 
-  /** Dev/admin endpoint to trigger word notification manually */
+  /** Dev/admin: immediately reschedule today's word jobs for current user */
   @Post('test-send')
   @HttpCode(200)
-  @ApiOperation({ summary: '[Dev] Manually trigger word notification for a level' })
+  @ApiOperation({ summary: '[Dev] Reschedule today\'s Word Booster jobs for current user' })
   async testSend(@CurrentUser() user: UserEntity) {
-    const level = user.notificationLevel ?? user.cefrLevel ?? 'A1';
-    await this.scheduler.sendWordForLevel(level);
-    return { triggered: true, level };
+    await this.scheduler.rescheduleUser(user.id);
+    return { triggered: true, userId: user.id };
   }
 }

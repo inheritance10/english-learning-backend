@@ -1,6 +1,6 @@
-import { Controller, Get, Patch, Delete, Param, Body, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
-import { IsIn, IsOptional } from 'class-validator';
+import { IsIn, IsOptional, IsString } from 'class-validator';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { JwtAuthGuard } from '../guards/jwt-auth.guard';
@@ -14,6 +14,23 @@ class UpdateVocabDto {
   status?: 'new' | 'learning' | 'mastered';
 }
 
+class CreateVocabDto {
+  @IsString()
+  word: string;
+
+  @IsOptional()
+  @IsString()
+  translation?: string;
+
+  @IsOptional()
+  @IsString()
+  definition?: string;
+
+  @IsOptional()
+  @IsString()
+  exampleSentence?: string;
+}
+
 @ApiTags('vocabulary')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
@@ -23,6 +40,29 @@ export class VocabularyController {
     @InjectRepository(VocabularyItemEntity)
     private readonly vocabRepo: Repository<VocabularyItemEntity>,
   ) {}
+
+  @Post()
+  @ApiOperation({ summary: 'Save a word to vocabulary bank' })
+  async create(
+    @Body() dto: CreateVocabDto,
+    @CurrentUser() user: UserEntity,
+  ) {
+    // Duplicate kontrolü: aynı kelime zaten varsa döndür
+    const existing = await this.vocabRepo.findOne({
+      where: { word: dto.word.toLowerCase(), userId: user.id },
+    });
+    if (existing) return existing;
+
+    const item = this.vocabRepo.create({
+      word: dto.word.toLowerCase(),
+      translation: dto.translation,
+      definition: dto.definition,
+      exampleSentence: dto.exampleSentence,
+      status: VocabularyStatus.NEW,
+      userId: user.id,
+    });
+    return this.vocabRepo.save(item);
+  }
 
   @Get()
   @ApiOperation({ summary: 'Get vocabulary bank items' })

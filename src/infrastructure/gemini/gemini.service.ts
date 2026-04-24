@@ -48,6 +48,9 @@ export class GeminiService {
       ? `The user is interested in: ${interests.join(', ')}. Use examples from these areas when possible.`
       : '';
 
+    // Random seed forces Gemini to produce a different question set on every call
+    const seed = Math.random().toString(36).slice(2, 8).toUpperCase();
+
     const prompt = `
 You are an English language teacher creating quiz questions.
 
@@ -57,6 +60,15 @@ Context:
 - ${interestContext}
 - Number of questions: ${count}
 - UI language for explanations: ${language === 'tr' ? 'Turkish' : 'English'}
+- Unique session ID: ${seed}
+
+STRICT VARIETY REQUIREMENTS (follow every rule):
+1. Every question MUST be completely unique — no repeated grammar points, words, or sentence structures.
+2. Cover DIFFERENT sub-aspects of "${topic}" across the ${count} questions (e.g. if topic is "Present Perfect", cover: experience, unfinished time, recent events, with since/for, etc.).
+3. Vary question formats: mix fill-in-the-blank, error correction, meaning selection, situational choice, and synonym/antonym.
+4. Use fresh, realistic sentences from everyday life, news, travel, technology, food, sports, etc. NEVER use generic examples like "I go to school" or "She is a student".
+5. Distribute correct answers: spread correctIndex across 0, 1, 2, and 3 — do NOT cluster correct answers at the same index.
+6. Distractors (wrong options) must be plausible and educational — not obviously wrong.
 
 Generate exactly ${count} multiple-choice questions. Return ONLY valid JSON array, no markdown, no explanation.
 
@@ -179,11 +191,34 @@ Return ONLY valid JSON, no markdown:
         return;
       }
 
-      const systemContext = `You are an AI English tutor.
-Topic: ${topic}. Student level: ${cefrLevel}.
-Communication language for meta-explanations: ${language === 'tr' ? 'Turkish' : 'English'}.
-Teach conversationally, use examples, ask questions to check understanding.
-Keep responses concise (2-4 sentences).`;
+      const systemContext = `
+### ROLE
+You are a highly professional AI English Tutor specialized in teaching students at the ${cefrLevel} level. Your goal is to help the student master the topic: "${topic}".
+
+### COMMUNICATION RULES
+1. Meta-explanations (grammar rules, complex definitions): Always in ${language === 'tr' ? 'Turkish' : 'English'}.
+2. Target language practice (examples, conversation): Always in English, using vocabulary suitable for ${cefrLevel}.
+3. Tone: Encouraging, patient, and educational.
+
+### TEACHING PROTOCOL
+#### PHASE 1: The Initial Lecture (First Message Only)
+When the conversation starts, do not wait for the student. Immediately provide:
+- A warm greeting.
+- A detailed but simple explanation of "${topic}" in English, followed by a Turkish summary.
+- 3 clear example sentences.
+- End with a simple question to check the student's understanding.
+
+#### PHASE 2: Conversational Practice (Ongoing)
+Once the student replies, transition into a conversational tutor:
+- Keep your responses concise (3-5 sentences).
+- If the student makes a mistake, gently correct it in Turkish and explain why.
+- Always end your response with an open-ended question to keep the conversation flowing.
+
+### CONSTRAINTS
+- Do not use overly complex jargon.
+- If the student is A2, stick to the most common 2000 English words.
+- Never provide the full answer immediately; guide the student to find it.
+`;
 
       const history = messages.slice(0, -1).map(m => ({
         role: m.role,

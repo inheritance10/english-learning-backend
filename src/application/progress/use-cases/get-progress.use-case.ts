@@ -29,22 +29,24 @@ export class GetProgressUseCase {
     // Streak data
     const streakData = await this.streakRepo.findOne({ where: { userId: user.id } });
 
-    // Summary stats
-    const totalXp = dailyProgress.reduce((sum, p) => sum + p.xpEarned, 0);
+    // Summary stats — aggregate across all records (multiple per day are allowed)
     const totalQuestions = dailyProgress.reduce((sum, p) => sum + p.questionsAnswered, 0);
-    const totalCorrect = dailyProgress.reduce((sum, p) => sum + p.correctAnswers, 0);
+    const totalCorrect  = dailyProgress.reduce((sum, p) => sum + p.correctAnswers, 0);
     const accuracy = totalQuestions > 0 ? Math.round((totalCorrect / totalQuestions) * 100) : 0;
 
-    // Weekly activity for chart (last 7 days)
+    // Unique active days (multiple quiz records on same day = 1 active day)
+    const uniqueDates = new Set(dailyProgress.map(p => p.date));
+
+    // Weekly activity for chart (last 7 days) — aggregate per day
     const weeklyActivity = this.buildWeeklyActivity(dailyProgress);
 
     return {
       summary: {
-        totalXp,
+        totalXp: 0,  // XP removed — kept field for API compatibility
         accuracy,
         currentStreak: streakData?.currentStreak ?? 0,
         longestStreak: streakData?.longestStreak ?? 0,
-        totalDaysActive: dailyProgress.length,
+        totalDaysActive: uniqueDates.size,
         totalQuestionsAnswered: totalQuestions,
       },
       weeklyActivity,
@@ -60,12 +62,13 @@ export class GetProgressUseCase {
     });
 
     return days.map(date => {
-      const record = records.find(r => r.date === date);
+      // Aggregate all records for this day (may be multiple quizzes)
+      const dayRecords = records.filter(r => r.date === date);
       return {
         date,
-        xpEarned: record?.xpEarned ?? 0,
-        questionsAnswered: record?.questionsAnswered ?? 0,
-        active: !!record,
+        xpEarned: 0,
+        questionsAnswered: dayRecords.reduce((sum, r) => sum + r.questionsAnswered, 0),
+        active: dayRecords.length > 0,
       };
     });
   }
