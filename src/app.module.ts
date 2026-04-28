@@ -48,7 +48,7 @@ import { UserCompletedTopicEntity } from './domain/entities/user-completed-topic
             UserSeenWordEntity,
             UserCompletedTopicEntity,
           ],
-          synchronize: configService.get('NODE_ENV') !== 'production',
+          synchronize: configService.get('NODE_ENV') !== 'production' || configService.get('FORCE_SYNC') === 'true',
           logging: configService.get('NODE_ENV') === 'development',
         };
 
