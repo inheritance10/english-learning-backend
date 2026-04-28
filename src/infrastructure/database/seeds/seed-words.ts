@@ -66,14 +66,18 @@ const WORDS: Omit<WordEntity, 'id' | 'createdAt'>[] = [
 ];
 
 async function seed() {
+  const databaseUrl = process.env.DATABASE_URL;
   const dataSource = new DataSource({
     type: 'postgres',
-    url: process.env.DATABASE_URL,
-    host: process.env.DB_HOST ?? 'localhost',
-    port: Number(process.env.DB_PORT ?? 5432),
-    username: process.env.DB_USERNAME ?? 'postgres',
-    password: process.env.DB_PASSWORD ?? 'postgres',
-    database: process.env.DB_NAME ?? 'langlearndb',
+    ...(databaseUrl
+      ? { url: databaseUrl }
+      : {
+          host: process.env.DB_HOST ?? 'localhost',
+          port: Number(process.env.DB_PORT ?? 5432),
+          username: process.env.DB_USERNAME ?? 'postgres',
+          password: process.env.DB_PASSWORD ?? 'postgres',
+          database: process.env.DB_NAME ?? 'langlearndb',
+        }),
     entities: [WordEntity],
     synchronize: true,
   });
