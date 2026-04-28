@@ -17,7 +17,9 @@
     "migration:run": "typeorm migration:run",
     "seed": "ts-node src/infrastructure/database/seeds/seed.ts",
     "seed:cefrj": "ts-node -r tsconfig-paths/register src/infrastructure/database/seeds/seed-cefrj.ts",
-    "seed:words": "ts-node -r tsconfig-paths/register src/infrastructure/database/seeds/seed-words.ts"
+    "seed:words": "ts-node -r tsconfig-paths/register src/infrastructure/database/seeds/seed-words.ts",
+    "seed:prod": "node dist/infrastructure/database/seeds/seed.js",
+    "seed:words:prod": "node dist/infrastructure/database/seeds/seed-words.js"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.0",
