@@ -2,6 +2,7 @@
  * Seed script — Word Booster vocabulary database
  * Run: npx ts-node -r tsconfig-paths/register src/infrastructure/database/seeds/seed-words.ts
  */
+import 'reflect-metadata';
 import { DataSource } from 'typeorm';
 import { WordEntity } from '../../../domain/entities/word.entity';
 import * as dotenv from 'dotenv';
