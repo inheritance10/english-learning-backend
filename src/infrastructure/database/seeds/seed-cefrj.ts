@@ -14,6 +14,10 @@ import { QuizQuestionEntity } from '../../../domain/entities/quiz-question.entit
 import { UserProgressEntity } from '../../../domain/entities/user-progress.entity';
 import { VocabularyItemEntity } from '../../../domain/entities/vocabulary-item.entity';
 import { DailyStreakEntity } from '../../../domain/entities/daily-streak.entity';
+import { NotificationEntity } from '../../../domain/entities/notification.entity';
+import { UserSeenWordEntity } from '../../../domain/entities/user-seen-word.entity';
+import { UserCompletedTopicEntity } from '../../../domain/entities/user-completed-topic.entity';
+import { WordEntity } from '../../../domain/entities/word.entity';
 import * as dotenv from 'dotenv';
 
 dotenv.config();
@@ -99,6 +103,7 @@ const dataSource = new DataSource({
   entities: [
     TopicEntity, UserEntity, SubscriptionEntity, QuizQuestionEntity,
     UserProgressEntity, VocabularyItemEntity, DailyStreakEntity,
+    NotificationEntity, UserSeenWordEntity, UserCompletedTopicEntity, WordEntity,
   ],
   synchronize: true,
 });

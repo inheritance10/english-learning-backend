@@ -5,6 +5,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { NotificationEntity } from '../../domain/entities/notification.entity';
 import { UserEntity } from '../../domain/entities/user.entity';
+import { UserSeenWordEntity } from '../../domain/entities/user-seen-word.entity';
 import { FcmNotificationService } from '../../infrastructure/notifications/fcm-notification.service';
 import { WordQueueService, WordJobData } from './word-queue.service';
 import { WORD_BOOSTER_QUEUE } from './word-booster.producer';
@@ -14,6 +15,7 @@ import { WORD_BOOSTER_QUEUE } from './word-booster.producer';
 })
 export class WordBoosterConsumer extends WorkerHost {
   private readonly logger = new Logger(WordBoosterConsumer.name);
+  private readonly isDev = process.env.NODE_ENV !== 'production';
 
   constructor(
     private readonly fcmService: FcmNotificationService,
@@ -22,6 +24,8 @@ export class WordBoosterConsumer extends WorkerHost {
     private readonly notificationRepo: Repository<NotificationEntity>,
     @InjectRepository(UserEntity)
     private readonly userRepo: Repository<UserEntity>,
+    @InjectRepository(UserSeenWordEntity)
+    private readonly seenRepo: Repository<UserSeenWordEntity>,
   ) {
     super();
   }
@@ -99,5 +103,17 @@ export class WordBoosterConsumer extends WorkerHost {
     this.logger.log(
       `✅ Sent "${word}" to user ${userId} [job ${job.data.jobIndex}/${job.data.totalJobs}]`,
     );
+
+    // 6. [DEV ONLY] Auto-reset after last job so the cycle repeats immediately
+    //    In production this block never runs — users wait until the next day (08:00 cron).
+    if (this.isDev && job.data.jobIndex === job.data.totalJobs) {
+      this.logger.warn(
+        `[DEV] Last word delivered for user ${userId} — resetting seen words & schedule date for next cycle`,
+      );
+      // Clear seen words so fresh words are selected in the next cycle
+      await this.seenRepo.delete({ userId });
+      // Clear scheduled date so the 2-min dev cron re-schedules on next tick
+      await this.userRepo.update(userId, { wordBoosterScheduledDate: null });
+    }
   }
 }

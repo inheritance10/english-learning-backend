@@ -49,7 +49,9 @@ export class WordBoosterProducer {
     const today = this.getToday();
 
     // ── Guard: skip if already scheduled today (prevents duplicate batches from repeated cron fires)
-    if (!force && user.wordBoosterScheduledDate === today) {
+    // In development this guard is disabled so notifications fire continuously for testing.
+    const isDev = process.env.NODE_ENV !== 'production';
+    if (!force && !isDev && user.wordBoosterScheduledDate === today) {
       this.logger.debug(`User ${user.id}: already scheduled for ${today}, skipping`);
       return;
     }
@@ -88,7 +90,10 @@ export class WordBoosterProducer {
       );
 
       // Mark user as scheduled for today so cron doesn't add duplicate batches
-      await this.userRepo.update(user.id, { wordBoosterScheduledDate: today });
+      // (skipped in dev — guard is already disabled, no need to track date)
+      if (!isDev) {
+        await this.userRepo.update(user.id, { wordBoosterScheduledDate: today });
+      }
 
       this.logger.log(
         `User ${user.id} (${level}): scheduled ${payloads.length} jobs ` +
