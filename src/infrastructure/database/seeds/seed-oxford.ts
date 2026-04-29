@@ -1,9 +1,11 @@
 /**
- * Oxford 3000 Word Seeder
- * Parses the Oxford 3000 CSV and inserts words into the `words` table.
+ * Oxford Word Seeder
+ * Processes a1.csv, a2.csv, b1.csv, b2.csv files from the backend root.
  *
- * Expected CSV columns (case-insensitive):
- *   word, level  (e.g. "hello", "A1")
+ * CSV format:
+ *   word,type,level
+ *   "a, an",article,A1
+ *   about,"preposition, adverb",A1
  *
  * Run: npm run seed:oxford
  */
@@ -16,12 +18,18 @@ import { WordTranslationEntity } from '../../../domain/entities/word-translation
 import * as dotenv from 'dotenv';
 dotenv.config();
 
-// ─── CSV paths to search ─────────────────────────────────────────────────────
-const CSV_PATHS = [
-  path.join(__dirname, '../../../../oxford-3000.csv'),
-  path.join(process.env.HOME ?? '', 'Downloads/oxford-3000.csv'),
-  path.join(process.env.HOME ?? '', 'Desktop/oxford-3000.csv'),
-  '/tmp/oxford-3000.csv',
+// ─── CSV files (in order) ─────────────────────────────────────────────────────
+const LEVEL_FILES: { file: string; level: string }[] = [
+  { file: 'a1.csv', level: 'A1' },
+  { file: 'a2.csv', level: 'A2' },
+  { file: 'b1.csv', level: 'B1' },
+  { file: 'b2.csv', level: 'B2' },
+];
+
+// Search in backend root and /app (Docker)
+const BASE_DIRS = [
+  path.join(__dirname, '../../../../'),   // backend root (local dev)
+  '/app/',                                 // Docker container
 ];
 
 // ─── DataSource ───────────────────────────────────────────────────────────────
@@ -54,44 +62,33 @@ function parseCSVLine(line: string): string[] {
   return result;
 }
 
-const VALID_LEVELS = new Set(['A1', 'A2', 'B1', 'B2', 'C1', 'C2']);
-
-async function run() {
-  // Find CSV
-  let csvPath: string | null = null;
-  for (const p of CSV_PATHS) {
-    if (fs.existsSync(p)) { csvPath = p; break; }
+function findFile(filename: string): string | null {
+  for (const base of BASE_DIRS) {
+    const p = path.join(base, filename);
+    if (fs.existsSync(p)) return p;
   }
+  return null;
+}
 
-  if (!csvPath) {
-    console.error('❌ Oxford CSV not found. Place it at one of:');
-    CSV_PATHS.forEach(p => console.error('  -', p));
-    process.exit(1);
-  }
-
-  console.log(`📂 Reading: ${csvPath}`);
-
+async function processFile(
+  csvPath: string,
+  expectedLevel: string,
+  repo: ReturnType<typeof dataSource.getRepository<WordEntity>>,
+): Promise<{ added: number; skipped: number }> {
   const lines = fs.readFileSync(csvPath, 'utf-8').split('\n');
-  const headers = parseCSVLine(lines[0]).map(h => h.toLowerCase());
+  const headers = parseCSVLine(lines[0]).map(h => h.toLowerCase().trim());
 
-  const wordIdx = headers.findIndex(h => h.includes('word'));
-  const levelIdx = headers.findIndex(h => h.includes('level') || h.includes('cefr'));
+  const wordIdx = headers.findIndex(h => h === 'word');
+  const typeIdx = headers.findIndex(h => h === 'type');
 
-  if (wordIdx === -1 || levelIdx === -1) {
-    console.error(`❌ CSV must have "word" and "level" columns. Found: ${headers.join(', ')}`);
-    process.exit(1);
+  if (wordIdx === -1) {
+    console.error(`  ❌ No "word" column found. Headers: ${headers.join(', ')}`);
+    return { added: 0, skipped: 0 };
   }
 
-  await dataSource.initialize();
-  console.log('✅ Database connected');
-
-  const repo = dataSource.getRepository(WordEntity);
-  const existing = await repo.count();
-  console.log(`ℹ️  Current words in DB: ${existing}`);
-
-  let added = 0;
+  // Batch insert for performance
+  const toInsert: Partial<WordEntity>[] = [];
   let skipped = 0;
-  const levelStats: Record<string, number> = {};
 
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i].trim();
@@ -99,35 +96,68 @@ async function run() {
 
     const cols = parseCSVLine(line);
     const word = cols[wordIdx]?.toLowerCase().trim();
-    const rawLevel = cols[levelIdx]?.toUpperCase().trim();
-    const level = rawLevel?.split(/[-,]/)[0]; // take first part e.g. "A1-A2" → "A1"
+    const usageNote = typeIdx !== -1 ? cols[typeIdx]?.trim() : null;
 
-    if (!word || !level || !VALID_LEVELS.has(level)) {
-      skipped++;
+    if (!word) { skipped++; continue; }
+
+    toInsert.push({
+      word,
+      meaning: word,        // placeholder — seed:translations will fill this
+      exampleSentence: null,
+      usageNote: usageNote ?? null,
+      level: expectedLevel,
+    });
+  }
+
+  if (toInsert.length === 0) return { added: 0, skipped };
+
+  // Use INSERT ... ON CONFLICT DO NOTHING to skip duplicates efficiently
+  const result = await repo
+    .createQueryBuilder()
+    .insert()
+    .into(WordEntity)
+    .values(toInsert as WordEntity[])
+    .orIgnore()
+    .execute();
+
+  const added = result.identifiers.length;
+  return { added, skipped: skipped + (toInsert.length - added) };
+}
+
+async function run() {
+  await dataSource.initialize();
+  console.log('✅ Database connected\n');
+
+  // Add unique constraint on (word, level) if not exists — safe to run multiple times
+  await dataSource.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_words_word_level ON words (word, level);
+  `).catch(() => { /* ignore if already exists */ });
+
+  const repo = dataSource.getRepository(WordEntity);
+  const before = await repo.count();
+  console.log(`ℹ️  Words in DB before: ${before}\n`);
+
+  let totalAdded = 0;
+  let totalSkipped = 0;
+
+  for (const { file, level } of LEVEL_FILES) {
+    const csvPath = findFile(file);
+    if (!csvPath) {
+      console.warn(`⚠️  ${file} not found — skipping ${level}`);
+      console.warn(`   Place it in the backend root folder (next to package.json)`);
       continue;
     }
 
-    // Skip if already exists (word + level combo)
-    const exists = await repo.findOne({ where: { word, level } });
-    if (exists) { skipped++; continue; }
-
-    await repo.save(repo.create({
-      word,
-      meaning: word,          // placeholder — will be filled by seed:translations
-      exampleSentence: null,
-      usageNote: null,
-      level,
-    }));
-
-    added++;
-    levelStats[level] = (levelStats[level] ?? 0) + 1;
-
-    if (added % 100 === 0) console.log(`  → ${added} words added...`);
+    console.log(`📂 Processing ${file} (${level})...`);
+    const { added, skipped } = await processFile(csvPath, level, repo);
+    console.log(`   ✅ Added: ${added}, Skipped: ${skipped}`);
+    totalAdded += added;
+    totalSkipped += skipped;
   }
 
-  console.log(`\n✅ Done: ${added} added, ${skipped} skipped`);
-  console.log('📊 Level breakdown:');
-  Object.keys(levelStats).sort().forEach(l => console.log(`   ${l}: ${levelStats[l]}`));
+  const after = await repo.count();
+  console.log(`\n🎉 Done! Added: ${totalAdded}, Skipped: ${totalSkipped}`);
+  console.log(`📊 Total words in DB: ${after}`);
 
   await dataSource.destroy();
 }
