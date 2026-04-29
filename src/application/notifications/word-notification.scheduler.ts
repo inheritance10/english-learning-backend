@@ -23,8 +23,11 @@ export class WordNotificationScheduler {
    */
   @Cron(
     process.env.NODE_ENV === 'production'
-      ? '0 8 * * *'       // 08:00 every day
+      ? '45 9 * * *'       // 09:45 TR time every day
       : '*/2 * * * *',    // every 2 min in dev
+    {
+      timeZone: 'Europe/Istanbul',
+    },
   )
   async scheduleDailyWordNotifications(): Promise<void> {
     this.logger.log('Word Booster daily scheduler triggered');
