@@ -23,6 +23,7 @@ import { WordEntity } from './domain/entities/word.entity';
 import { NotificationEntity } from './domain/entities/notification.entity';
 import { UserSeenWordEntity } from './domain/entities/user-seen-word.entity';
 import { UserCompletedTopicEntity } from './domain/entities/user-completed-topic.entity';
+import { WordTranslationEntity } from './domain/entities/word-translation.entity';
 
 @Module({
   imports: [
@@ -47,6 +48,7 @@ import { UserCompletedTopicEntity } from './domain/entities/user-completed-topic
             NotificationEntity,
             UserSeenWordEntity,
             UserCompletedTopicEntity,
+            WordTranslationEntity,
           ],
           synchronize: configService.get('NODE_ENV') !== 'production' || configService.get('FORCE_SYNC') === 'true',
           logging: configService.get('NODE_ENV') === 'development',

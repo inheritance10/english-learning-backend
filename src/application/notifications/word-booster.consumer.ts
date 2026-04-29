@@ -6,6 +6,7 @@ import { Repository } from 'typeorm';
 import { NotificationEntity } from '../../domain/entities/notification.entity';
 import { UserEntity } from '../../domain/entities/user.entity';
 import { UserSeenWordEntity } from '../../domain/entities/user-seen-word.entity';
+import { WordTranslationEntity } from '../../domain/entities/word-translation.entity';
 import { FcmNotificationService } from '../../infrastructure/notifications/fcm-notification.service';
 import { WordQueueService, WordJobData } from './word-queue.service';
 import { WORD_BOOSTER_QUEUE } from './word-booster.producer';
@@ -26,21 +27,23 @@ export class WordBoosterConsumer extends WorkerHost {
     private readonly userRepo: Repository<UserEntity>,
     @InjectRepository(UserSeenWordEntity)
     private readonly seenRepo: Repository<UserSeenWordEntity>,
+    @InjectRepository(WordTranslationEntity)
+    private readonly translationRepo: Repository<WordTranslationEntity>,
   ) {
     super();
   }
 
   async process(job: Job<WordJobData>): Promise<void> {
-    const { userId, wordId, word, meaning, exampleSentence, level } = job.data;
+    const { userId, wordId, word, level } = job.data;
 
     this.logger.debug(
       `Processing job ${job.id}: "${word}" → user ${userId} (${level})`,
     );
 
-    // 1. Load user to get FCM token and notification level
+    // 1. Load user to get FCM token, language and notification level
     const user = await this.userRepo.findOne({
       where: { id: userId },
-      select: ['id', 'fcmToken', 'isWordNotificationEnabled', 'notificationLevel', 'cefrLevel'],
+      select: ['id', 'fcmToken', 'isWordNotificationEnabled', 'notificationLevel', 'cefrLevel', 'language'],
     });
 
     if (!user) {
@@ -58,7 +61,25 @@ export class WordBoosterConsumer extends WorkerHost {
       return;
     }
 
-    // 2. Build notification content
+    // 2. Fetch localized translation for user's language, fallback to 'en'
+    const userLanguage = user.language ?? 'en';
+    let translation = await this.translationRepo.findOne({
+      where: { wordId, language: userLanguage },
+    });
+
+    if (!translation && userLanguage !== 'en') {
+      translation = await this.translationRepo.findOne({
+        where: { wordId, language: 'en' },
+      });
+      if (translation) {
+        this.logger.debug(`User ${userId}: no '${userLanguage}' translation for "${word}", using 'en' fallback`);
+      }
+    }
+
+    const meaning = translation?.meaning ?? word;
+    const exampleSentence = translation?.exampleSentence ?? null;
+
+    // 3. Build notification content
     const notifLevel = user.notificationLevel || user.cefrLevel || level;
     const title = `📚 Word Booster · ${notifLevel}`;
     const body = exampleSentence
@@ -74,7 +95,7 @@ export class WordBoosterConsumer extends WorkerHost {
       ...(exampleSentence ? { exampleSentence } : {}),
     };
 
-    // 3. Send FCM push notification directly to user's device token (not topic broadcast)
+    // 4. Send FCM push notification directly to user's device token
     try {
       await this.fcmService.sendToDevice(user.fcmToken, title, body, data);
     } catch (err: any) {
@@ -82,7 +103,7 @@ export class WordBoosterConsumer extends WorkerHost {
       throw err;   // re-throw so BullMQ retries the job
     }
 
-    // 4. Save to notification DB (user's in-app inbox)
+    // 5. Save to notification DB (user's in-app inbox)
     await this.notificationRepo
       .createQueryBuilder()
       .insert()
@@ -97,22 +118,19 @@ export class WordBoosterConsumer extends WorkerHost {
       })
       .execute();
 
-    // 5. Mark word as seen — ONLY after successful delivery
+    // 6. Mark word as seen — ONLY after successful delivery
     await this.wordQueueService.markAsSeen(userId, wordId, level);
 
     this.logger.log(
-      `✅ Sent "${word}" to user ${userId} [job ${job.data.jobIndex}/${job.data.totalJobs}]`,
+      `✅ Sent "${word}" (${userLanguage}) to user ${userId} [job ${job.data.jobIndex}/${job.data.totalJobs}]`,
     );
 
-    // 6. [DEV ONLY] Auto-reset after last job so the cycle repeats immediately
-    //    In production this block never runs — users wait until the next day (08:00 cron).
+    // 7. [DEV ONLY] Auto-reset after last job so the cycle repeats immediately
     if (this.isDev && job.data.jobIndex === job.data.totalJobs) {
       this.logger.warn(
         `[DEV] Last word delivered for user ${userId} — resetting seen words & schedule date for next cycle`,
       );
-      // Clear seen words so fresh words are selected in the next cycle
       await this.seenRepo.delete({ userId });
-      // Clear scheduled date so the 2-min dev cron re-schedules on next tick
       await this.userRepo.update(userId, { wordBoosterScheduledDate: null });
     }
   }

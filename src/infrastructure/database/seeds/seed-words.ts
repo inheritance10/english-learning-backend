@@ -8,7 +8,7 @@ import { WordEntity } from '../../../domain/entities/word.entity';
 import * as dotenv from 'dotenv';
 dotenv.config();
 
-const WORDS: Omit<WordEntity, 'id' | 'createdAt'>[] = [
+const WORDS: Omit<WordEntity, 'id' | 'createdAt' | 'translations'>[] = [
   // ─── A1 ───────────────────────────────────────────────────────────
   { word: 'hello', meaning: 'merhaba', exampleSentence: 'Hello! How are you?', usageNote: 'Informal greeting', level: 'A1' },
   { word: 'book', meaning: 'kitap', exampleSentence: 'I read a book every night.', usageNote: 'Countable noun', level: 'A1' },

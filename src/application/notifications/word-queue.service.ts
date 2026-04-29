@@ -9,8 +9,6 @@ export interface WordJobData {
   userId: string;
   wordId: string;
   word: string;
-  meaning: string;
-  exampleSentence: string | null;
   level: string;
   delayMs: number;
   jobIndex: number;
@@ -144,8 +142,6 @@ export class WordQueueService {
       userId,
       wordId: word.id,
       word: word.word,
-      meaning: word.meaning,
-      exampleSentence: word.exampleSentence ?? null,
       level: word.level,
       delayMs: index * frequencyMs,
       jobIndex: index + 1,

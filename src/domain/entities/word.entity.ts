@@ -1,4 +1,5 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, Index } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, Index, OneToMany } from 'typeorm';
+import { WordTranslationEntity } from './word-translation.entity';
 
 @Entity('words')
 @Index(['level'])
@@ -24,4 +25,7 @@ export class WordEntity {
 
   @CreateDateColumn()
   createdAt: Date;
+
+  @OneToMany(() => WordTranslationEntity, (t) => t.word)
+  translations: WordTranslationEntity[];
 }
