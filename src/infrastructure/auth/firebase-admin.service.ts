@@ -24,11 +24,21 @@ export class FirebaseAdminService implements OnModuleInit {
       }
 
       try {
+        // Support both Base64-encoded and raw private key formats
+        let resolvedKey = privateKey!;
+        if (!resolvedKey.includes('BEGIN PRIVATE KEY')) {
+          // Assume Base64-encoded
+          resolvedKey = Buffer.from(resolvedKey, 'base64').toString('utf-8');
+        } else {
+          // Raw key — normalize escaped newlines
+          resolvedKey = resolvedKey.replace(/\\n/g, '\n');
+        }
+
         admin.initializeApp({
           credential: admin.credential.cert({
             projectId,
             clientEmail,
-            privateKey: privateKey!.replace(/\\n/g, '\n'),
+            privateKey: resolvedKey,
           }),
         });
         this.logger.log('Firebase Admin initialized');
