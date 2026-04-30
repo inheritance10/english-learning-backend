@@ -128,4 +128,25 @@ export class NotificationsController {
     await this.scheduler.rescheduleUser(user.id);
     return { triggered: true, userId: user.id };
   }
+
+  /**
+   * Reschedule Word Booster for current user immediately.
+   * Clears today's pending jobs + seen words, then re-schedules with current settings.
+   * Useful when user changes count/frequency and wants it applied right away.
+   */
+  @Post('reschedule')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Reschedule Word Booster immediately with current settings' })
+  async reschedule(@CurrentUser() user: UserEntity) {
+    // Reset scheduled date so the guard doesn't block re-scheduling
+    await this.userRepo.update(user.id, { wordBoosterScheduledDate: null });
+    // Force re-schedule with current settings
+    await this.scheduler.rescheduleUser(user.id);
+    return {
+      rescheduled: true,
+      userId: user.id,
+      wordNotificationCount: user.wordNotificationCount,
+      wordNotificationFrequency: user.wordNotificationFrequency,
+    };
+  }
 }
