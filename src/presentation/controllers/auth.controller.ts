@@ -1,6 +1,7 @@
-import { Controller, Post, Body, Get, UseGuards, Patch } from '@nestjs/common';
+import { Controller, Post, Body, Get, UseGuards, Patch, ForbiddenException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
-import { IsString, IsOptional, IsIn } from 'class-validator';
+import { IsString, IsOptional, IsIn, IsEmail } from 'class-validator';
+import { JwtService } from '@nestjs/jwt';
 import { SocialAuthUseCase } from '../../application/auth/use-cases/social-auth.use-case';
 import { JwtAuthGuard } from '../guards/jwt-auth.guard';
 import { CurrentUser } from '../decorators/current-user.decorator';
@@ -8,6 +9,11 @@ import { Public } from '../decorators/public.decorator';
 import { UserEntity } from '../../domain/entities/user.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+
+class DevTokenDto {
+  @IsEmail()
+  email: string;
+}
 
 class SocialAuthDto {
   @IsString()
@@ -40,6 +46,7 @@ class UpdateProfileDto {
 export class AuthController {
   constructor(
     private readonly socialAuth: SocialAuthUseCase,
+    private readonly jwtService: JwtService,
     @InjectRepository(UserEntity)
     private readonly userRepo: Repository<UserEntity>,
   ) {}
@@ -49,6 +56,20 @@ export class AuthController {
   @ApiOperation({ summary: 'Sign in with Google or Apple via Firebase' })
   async socialSignIn(@Body() dto: SocialAuthDto) {
     return this.socialAuth.execute(dto);
+  }
+
+  /** DEV ONLY — returns JWT for an existing user by email. Never use in production. */
+  @Public()
+  @Post('dev-token')
+  @ApiOperation({ summary: '[Dev] Get JWT token by email (dev/test only)' })
+  async devToken(@Body() dto: DevTokenDto) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new ForbiddenException('Not available in production');
+    }
+    const user = await this.userRepo.findOne({ where: { email: dto.email } });
+    if (!user) throw new ForbiddenException('User not found');
+    const accessToken = this.jwtService.sign({ sub: user.id, email: user.email });
+    return { accessToken, userId: user.id };
   }
 
   @UseGuards(JwtAuthGuard)
