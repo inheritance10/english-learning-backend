@@ -71,6 +71,10 @@ export class FcmNotificationService {
           payload: {
             aps: { sound: 'default', badge: 1 },
           },
+          headers: {
+            'apns-push-type': 'alert',
+            'apns-priority': '10',
+          },
         },
       };
 
