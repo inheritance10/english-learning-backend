@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards, BadRequestException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { IsIn, IsOptional, IsString } from 'class-validator';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -62,6 +62,19 @@ export class VocabularyController {
       userId: user.id,
     });
     return this.vocabRepo.save(item);
+  }
+
+  @Get('check')
+  @ApiOperation({ summary: 'Check if a word is already saved' })
+  async check(
+    @Query('word') word: string,
+    @CurrentUser() user: UserEntity,
+  ) {
+    if (!word) throw new BadRequestException('word query param required');
+    const existing = await this.vocabRepo.findOne({
+      where: { word: word.toLowerCase(), userId: user.id },
+    });
+    return { exists: !!existing };
   }
 
   @Get()

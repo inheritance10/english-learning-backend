@@ -247,6 +247,119 @@ Once the student replies, transition into a conversational tutor:
     }
   }
 
+  async defineWord(params: {
+    word: string;
+    context?: string;
+    cefrLevel: string;
+    language: 'en' | 'tr';
+  }): Promise<import('../../application/ai/use-cases/define-word.use-case').WordDefinition> {
+    const { word, context, cefrLevel, language } = params;
+
+    const prompt = `
+You are a dictionary and English teacher. Define the word "${word}" for a ${cefrLevel} level English learner.
+${context ? `Context sentence where the word appears: "${context}"` : ''}
+
+Return ONLY valid JSON, no markdown:
+{
+  "word": "${word}",
+  "phonetic": "IPA phonetic (e.g. /wɜːrd/)",
+  "partOfSpeech": "noun|verb|adjective|adverb|preposition|conjunction|etc",
+  "definition": "Clear definition in English (suitable for ${cefrLevel} level)",
+  "translation": "Translation in ${language === 'tr' ? 'Turkish' : 'English'}",
+  "exampleSentence": "A natural example sentence using the word",
+  "exampleTranslation": "Translation of the example sentence in ${language === 'tr' ? 'Turkish' : 'English'}"
+}
+`;
+
+    try {
+      if (!this.apiKeyConfigured) {
+        return {
+          word,
+          phonetic: '',
+          partOfSpeech: 'word',
+          definition: `Definition of "${word}" (mock - API key not configured)`,
+          translation: `"${word}" kelimesinin çevirisi`,
+          exampleSentence: `This is an example sentence with ${word}.`,
+          exampleTranslation: `Bu ${word} kelimesini içeren örnek bir cümledir.`,
+        };
+      }
+
+      LoggerUtil.logGeminiRequest(this.logger, 'defineWord', { word, cefrLevel }, this.modelName);
+      const result = await this.model.generateContent(prompt);
+      const text = result.response.text().trim();
+      const json = text.replace(/^```json?\n?/, '').replace(/\n?```$/, '');
+      return JSON.parse(json);
+    } catch (err: any) {
+      LoggerUtil.logGeminiError(this.logger, 'defineWord', err, { word, cefrLevel });
+      return {
+        word,
+        phonetic: '',
+        partOfSpeech: 'word',
+        definition: `Could not load definition for "${word}"`,
+        translation: `"${word}" çevirisi yüklenemedi`,
+        exampleSentence: '',
+        exampleTranslation: '',
+      };
+    }
+  }
+
+  async generateDailyStory(params: {
+    words: string[];
+    cefrLevel: string;
+    language: 'en' | 'tr';
+    userInterests: string[];
+  }): Promise<{ title: string; content: string; wordHighlights: string[] }> {
+    const { words, cefrLevel, language, userInterests } = params;
+    const wordList = words.join(', ');
+    const interestCtx = userInterests.length > 0
+      ? `The user is interested in: ${userInterests.join(', ')}.`
+      : '';
+
+    const prompt = `
+You are a creative English teacher. Create a short, fun, and engaging daily story for an English learner at ${cefrLevel} level.
+
+Requirements:
+- The story MUST naturally include ALL of these words: ${wordList}
+- ${interestCtx} Make the story relevant to these interests if possible.
+- Length: 80-120 words — short enough to read in 1 minute
+- Use simple vocabulary appropriate for ${cefrLevel}
+- Make it fun and memorable (can be slightly humorous)
+- Write the story in English
+- Provide a ${language === 'tr' ? 'Turkish' : 'English'} title
+
+Return ONLY valid JSON, no markdown:
+{
+  "title": "Story title in ${language === 'tr' ? 'Turkish' : 'English'}",
+  "content": "The full story in English",
+  "wordHighlights": ["list", "of", "the", "target", "words", "actually", "used"]
+}
+`;
+
+    try {
+      if (!this.apiKeyConfigured) {
+        return {
+          title: 'Günün Hikayesi',
+          content: `Bu kelimelerle ilgili bir hikaye: ${wordList}. (Mock - API key not configured)`,
+          wordHighlights: words,
+        };
+      }
+
+      LoggerUtil.logGeminiRequest(this.logger, 'generateDailyStory', { wordCount: words.length, cefrLevel }, this.modelName);
+      const result = await this.model.generateContent(prompt);
+      const text = result.response.text().trim();
+      LoggerUtil.logGeminiResponse(this.logger, 'generateDailyStory', text.length);
+      const json = text.replace(/^```json?\n?/, '').replace(/\n?```$/, '');
+      return JSON.parse(json);
+    } catch (err: any) {
+      LoggerUtil.logGeminiError(this.logger, 'generateDailyStory', err, { wordCount: words.length });
+      return {
+        title: 'Günün Hikayesi',
+        content: `Today's words: ${wordList}`,
+        wordHighlights: words,
+      };
+    }
+  }
+
   async generateLearningPath(params: {
     cefrLevel: string;
     interests: string[];
@@ -290,6 +403,47 @@ Return ONLY a JSON array of 6 recommended topics:
     }
   }
 
+  async generateQuestionVariant(original: {
+    content: string;
+    options: string[];
+    correctIndex: number;
+    explanation?: string;
+    difficultyLevel?: string;
+    topicTag?: string;
+  }): Promise<{ content: string; options: string[]; correctIndex: number; explanation: string }> {
+    const prompt = `You are an English exam question writer.
+Below is an original exam question. Create a NEW similar question that:
+- Tests the SAME grammar/vocabulary concept: "${original.topicTag ?? 'general English'}"
+- Has the SAME difficulty level: "${original.difficultyLevel ?? 'medium'}"
+- Uses a COMPLETELY DIFFERENT scenario, context and vocabulary
+- Has exactly 4 answer options (A, B, C, D format)
+
+ORIGINAL QUESTION:
+${original.content}
+Options: ${original.options.join(' | ')}
+Correct answer index: ${original.correctIndex}
+
+Return ONLY valid JSON in this exact format, no markdown, no extra text:
+{"content":"<question text>","options":["A) ...","B) ...","C) ...","D) ..."],"correctIndex":<0-3>,"explanation":"<why the answer is correct>"}`;
+
+    try {
+      const result = await this.model.generateContent(prompt);
+      const text = result.response.text().trim();
+      // Strip markdown code blocks if present
+      const json = text.replace(/^```json?\n?/, '').replace(/\n?```$/, '');
+      return JSON.parse(json);
+    } catch (err) {
+      this.logger.warn('generateQuestionVariant failed, returning mock variant');
+      // Mock fallback
+      return {
+        content: `[Similar question for: ${original.topicTag ?? 'grammar'}] ${original.content.substring(0, 60)}...`,
+        options: original.options,
+        correctIndex: original.correctIndex,
+        explanation: original.explanation ?? 'Please review the grammar rule.',
+      };
+    }
+  }
+
   private getMockQuestions(topic: string, count: number): QuizQuestion[] {
     return Array.from({ length: count }, (_, i) => ({
       question: `Sample question ${i + 1} about ${topic}`,
@@ -299,6 +453,206 @@ Return ONLY a JSON array of 6 recommended topics:
       hint: 'Think about the rule for...',
       grammar_point: topic,
     }));
+  }
+
+  // ─── Reading Activity ────────────────────────────────────────────────────
+  /**
+   * Generate a personalized "Active Reading" activity:
+   * a short reading passage matched to the learner's level + interest,
+   * plus a small set of comprehension questions (mix of true/false and multi).
+   */
+  async generateReadingActivity(params: {
+    cefrLevel: string;
+    interest: string; // e.g. 'technology' | 'travel' ...
+    interestLabel: string; // localized display label (e.g. 'Teknoloji')
+    language: 'en' | 'tr';
+  }): Promise<{
+    title: string;
+    topicLabel: string;
+    content: string;
+    highlightedWords: string[];
+    questions: Array<{
+      type: 'true-false' | 'multi';
+      question: string;
+      options: string[];
+      correctIndex: number;
+      explanation?: string;
+    }>;
+  }> {
+    const { cefrLevel, interest, interestLabel, language } = params;
+    const seed = Math.random().toString(36).slice(2, 8).toUpperCase();
+    const uiLang = language === 'tr' ? 'Turkish' : 'English';
+
+    const prompt = `
+You are an expert English teacher creating a personalized "Active Reading" activity
+for a learner at CEFR level ${cefrLevel} interested in "${interest}".
+
+Unique session ID (forces variety, do not include in output): ${seed}
+
+REQUIREMENTS:
+1. Reading body MUST be in ENGLISH and tailored for ${cefrLevel}.
+2. Length: 90-140 words, organized in 3 short paragraphs separated by a blank line.
+3. Topic must clearly relate to "${interest}". Make it engaging and modern.
+4. Title is the headline of the article — short and catchy. Provide it in ${uiLang}.
+5. Topic label is the broad category in UPPERCASE in ${uiLang}, e.g. "TEKNOLOJİ".
+6. Pick 4-6 KEY vocabulary words from the body that the learner should focus on
+   (single words, lowercase, exactly as they appear in body). These will be
+   visually highlighted in the UI. Avoid pronouns and very common stop-words.
+7. Generate EXACTLY 3 comprehension questions:
+   - 1 of type "true-false" (options ["True", "False"])
+   - 2 of type "multi" with EXACTLY 3 options each
+   The first question should test general comprehension (true/false).
+   The other two should test detail/inference and vocabulary in context.
+8. correctIndex MUST be a valid index into options.
+9. Every "question" and every option must be SHORT (max ~12 words).
+10. Provide each "explanation" in ${uiLang}, ONE short sentence.
+
+Return ONLY valid JSON, no markdown, no commentary, with this EXACT shape:
+
+{
+  "title": "string (in ${uiLang})",
+  "topicLabel": "string (UPPERCASE in ${uiLang})",
+  "content": "Full reading body in English. Paragraphs separated by \\n\\n.",
+  "highlightedWords": ["word1", "word2", "..."],
+  "questions": [
+    {
+      "type": "true-false",
+      "question": "Statement to evaluate (English)",
+      "options": ["True", "False"],
+      "correctIndex": 0,
+      "explanation": "One short sentence in ${uiLang}."
+    },
+    {
+      "type": "multi",
+      "question": "English question",
+      "options": ["A", "B", "C"],
+      "correctIndex": 1,
+      "explanation": "One short sentence in ${uiLang}."
+    },
+    {
+      "type": "multi",
+      "question": "English question",
+      "options": ["A", "B", "C"],
+      "correctIndex": 2,
+      "explanation": "One short sentence in ${uiLang}."
+    }
+  ]
+}
+`;
+
+    try {
+      if (!this.apiKeyConfigured) {
+        return this.getMockReadingActivity(interestLabel, cefrLevel);
+      }
+
+      LoggerUtil.logGeminiRequest(
+        this.logger,
+        'generateReadingActivity',
+        { cefrLevel, interest },
+        this.modelName,
+      );
+      const result = await this.model.generateContent(prompt);
+      const text = result.response.text().trim();
+      LoggerUtil.logGeminiResponse(this.logger, 'generateReadingActivity', text.length);
+      const json = text.replace(/^```json?\n?/, '').replace(/\n?```$/, '');
+      const parsed = JSON.parse(json);
+
+      // Defensive normalization — Gemini sometimes drifts from the schema.
+      const normalize = (q: any): {
+        type: 'true-false' | 'multi';
+        question: string;
+        options: string[];
+        correctIndex: number;
+        explanation?: string;
+      } => {
+        const type: 'true-false' | 'multi' =
+          q.type === 'true-false' ? 'true-false' : 'multi';
+        const options: string[] = Array.isArray(q.options) ? q.options.map((o: any) => String(o)) : [];
+        const correctIndex =
+          typeof q.correctIndex === 'number' &&
+          q.correctIndex >= 0 &&
+          q.correctIndex < options.length
+            ? q.correctIndex
+            : 0;
+        return {
+          type,
+          question: String(q.question ?? ''),
+          options,
+          correctIndex,
+          explanation: q.explanation ? String(q.explanation) : undefined,
+        };
+      };
+
+      return {
+        title: String(parsed.title ?? 'Reading'),
+        topicLabel: String(parsed.topicLabel ?? interestLabel.toUpperCase()),
+        content: String(parsed.content ?? ''),
+        highlightedWords: Array.isArray(parsed.highlightedWords)
+          ? parsed.highlightedWords.map((w: any) => String(w).toLowerCase())
+          : [],
+        questions: Array.isArray(parsed.questions) ? parsed.questions.map(normalize) : [],
+      };
+    } catch (err: any) {
+      LoggerUtil.logGeminiError(this.logger, 'generateReadingActivity', err, {
+        cefrLevel,
+        interest,
+      });
+      this.logger.warn(`Falling back to mock reading activity. Error: ${err?.message}`);
+      return this.getMockReadingActivity(interestLabel, cefrLevel);
+    }
+  }
+
+  private getMockReadingActivity(
+    interestLabel: string,
+    cefrLevel: string,
+  ): {
+    title: string;
+    topicLabel: string;
+    content: string;
+    highlightedWords: string[];
+    questions: Array<{
+      type: 'true-false' | 'multi';
+      question: string;
+      options: string[];
+      correctIndex: number;
+      explanation?: string;
+    }>;
+  } {
+    return {
+      title: `${interestLabel} & The Future`,
+      topicLabel: interestLabel.toUpperCase(),
+      content:
+        `Artificial intelligence is changing the way we live and work. ` +
+        `Many people now use convenient AI tools for daily tasks like writing emails or planning trips.\n\n` +
+        `Companies invest in machine learning to improve their products. As technology grows, ` +
+        `communication between humans and machines becomes faster and more natural.\n\n` +
+        `Although AI is helpful, we still need to understand its limits at the ${cefrLevel} level. ` +
+        `Used wisely, it can make our future easier and more creative.`,
+      highlightedWords: ['artificial', 'convenient', 'machine', 'communication', 'technology'],
+      questions: [
+        {
+          type: 'true-false',
+          question: 'AI tools can help us with daily tasks.',
+          options: ['True', 'False'],
+          correctIndex: 0,
+          explanation: 'Metinde günlük görevlerde yardımcı oldukları belirtiliyor.',
+        },
+        {
+          type: 'multi',
+          question: 'What does "convenient" mean here?',
+          options: ['Useful and easy', 'Expensive', 'Dangerous'],
+          correctIndex: 0,
+          explanation: '"Convenient" = kullanışlı / uygun.',
+        },
+        {
+          type: 'multi',
+          question: 'Why do companies invest in machine learning?',
+          options: ['To pay less tax', 'To improve products', 'To stop AI'],
+          correctIndex: 1,
+          explanation: 'Metin ürünleri geliştirmek için yatırım yapıldığını söylüyor.',
+        },
+      ],
+    };
   }
 }
 

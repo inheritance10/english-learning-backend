@@ -9,6 +9,7 @@ import { GenerateQuizUseCase } from '../../application/ai/use-cases/generate-qui
 import { AnalyzeAnswerUseCase } from '../../application/ai/use-cases/analyze-answer.use-case';
 import { LessonChatUseCase } from '../../application/ai/use-cases/lesson-chat.use-case';
 import { GenerateLearningPathUseCase } from '../../application/ai/use-cases/generate-learning-path.use-case';
+import { DefineWordUseCase } from '../../application/ai/use-cases/define-word.use-case';
 
 class GenerateQuizDto {
   @IsString()
@@ -59,6 +60,19 @@ class ChatMessageDto {
   content: string;
 }
 
+class DefineWordDto {
+  @IsString()
+  word: string;
+
+  @IsOptional()
+  @IsString()
+  context?: string;
+
+  @IsOptional()
+  @IsString()
+  cefrLevel?: string;
+}
+
 class LessonChatDto {
   @IsString()
   topicId: string;
@@ -83,6 +97,7 @@ export class AiController {
     private readonly analyzeAnswer: AnalyzeAnswerUseCase,
     private readonly lessonChat: LessonChatUseCase,
     private readonly learningPath: GenerateLearningPathUseCase,
+    private readonly defineWordUseCase: DefineWordUseCase,
   ) {}
 
   @Post('quiz/generate')
@@ -111,5 +126,11 @@ export class AiController {
   @ApiOperation({ summary: 'Generate personalized learning path' })
   async getLearningPath(@CurrentUser() user: UserEntity) {
     return this.learningPath.execute(user);
+  }
+
+  @Post('word/define')
+  @ApiOperation({ summary: 'Get definition, translation, and example for a word' })
+  async defineWord(@Body() dto: DefineWordDto, @CurrentUser() user: UserEntity) {
+    return this.defineWordUseCase.execute(dto, user);
   }
 }

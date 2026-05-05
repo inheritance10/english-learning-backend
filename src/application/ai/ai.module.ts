@@ -9,6 +9,7 @@ import { GenerateQuizUseCase } from './use-cases/generate-quiz.use-case';
 import { AnalyzeAnswerUseCase } from './use-cases/analyze-answer.use-case';
 import { LessonChatUseCase } from './use-cases/lesson-chat.use-case';
 import { GenerateLearningPathUseCase } from './use-cases/generate-learning-path.use-case';
+import { DefineWordUseCase } from './use-cases/define-word.use-case';
 import { AiController } from '../../presentation/controllers/ai.controller';
 import { AuthModule } from '../auth/auth.module';
 
@@ -18,7 +19,7 @@ import { AuthModule } from '../auth/auth.module';
     AuthModule,
   ],
   controllers: [AiController],
-  providers: [GeminiService, GenerateQuizUseCase, AnalyzeAnswerUseCase, LessonChatUseCase, GenerateLearningPathUseCase],
+  providers: [GeminiService, GenerateQuizUseCase, AnalyzeAnswerUseCase, LessonChatUseCase, GenerateLearningPathUseCase, DefineWordUseCase],
   exports: [GeminiService],
 })
 export class AiModule {}

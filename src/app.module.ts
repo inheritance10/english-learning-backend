@@ -24,6 +24,17 @@ import { NotificationEntity } from './domain/entities/notification.entity';
 import { UserSeenWordEntity } from './domain/entities/user-seen-word.entity';
 import { UserCompletedTopicEntity } from './domain/entities/user-completed-topic.entity';
 import { WordTranslationEntity } from './domain/entities/word-translation.entity';
+import { UserWordSrsEntity } from './domain/entities/user-word-srs.entity';
+import { StoryEntity } from './domain/entities/story.entity';
+import { WordBoosterModule } from './application/word-booster/word-booster.module';
+import { ExamPrepModule } from './application/exam-prep/exam-prep.module';
+import { ExamEntity } from './domain/entities/exam.entity';
+import { ExamCategoryEntity } from './domain/entities/exam-category.entity';
+import { QuestionEntity } from './domain/entities/question.entity';
+import { UserExamAttemptEntity } from './domain/entities/user-exam-attempt.entity';
+import { AiGeneratedVariantEntity } from './domain/entities/ai-generated-variant.entity';
+import { ReadingActivityEntity } from './domain/entities/reading-activity.entity';
+import { ReadingActivityModule } from './application/reading-activity/reading-activity.module';
 
 @Module({
   imports: [
@@ -49,6 +60,14 @@ import { WordTranslationEntity } from './domain/entities/word-translation.entity
             UserSeenWordEntity,
             UserCompletedTopicEntity,
             WordTranslationEntity,
+            UserWordSrsEntity,
+            StoryEntity,
+            ExamEntity,
+            ExamCategoryEntity,
+            QuestionEntity,
+            UserExamAttemptEntity,
+            AiGeneratedVariantEntity,
+            ReadingActivityEntity,
           ],
           synchronize: configService.get('NODE_ENV') !== 'production' || configService.get('FORCE_SYNC') === 'true',
           logging: configService.get('NODE_ENV') === 'development',
@@ -95,6 +114,9 @@ import { WordTranslationEntity } from './domain/entities/word-translation.entity
     ProgressModule,
     VocabularyModule,
     NotificationsModule,
+    WordBoosterModule,
+    ExamPrepModule,
+    ReadingActivityModule,
   ],
 })
 export class AppModule {}

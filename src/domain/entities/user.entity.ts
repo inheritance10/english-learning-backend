@@ -34,6 +34,13 @@ export class UserEntity {
   @Column({ default: 'en' })
   language: string;
 
+  /**
+   * User's profession — used for contextual/sectoral example sentences.
+   * e.g. 'software_engineer' | 'doctor' | 'teacher' | 'student' | null
+   */
+  @Column({ nullable: true })
+  profession: string;
+
   /** CEFR level: A1 | A2 | B1 | B2 | C1 | C2 */
   @Column({ nullable: true })
   cefrLevel: string;

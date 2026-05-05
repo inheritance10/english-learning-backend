@@ -12,6 +12,8 @@ services:
       - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    networks:
+      - langlearn_net
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U lang_user -d langlearn_db"]
       interval: 5s
@@ -26,6 +28,8 @@ services:
       - "6379:6379"
     volumes:
       - redis_data:/data
+    networks:
+      - langlearn_net
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "redispassword", "ping"]
       interval: 5s
@@ -48,6 +52,8 @@ services:
     volumes:
       - .:/app
       - /app/node_modules
+    networks:
+      - langlearn_net
     depends_on:
       postgres:
         condition: service_healthy
@@ -57,3 +63,7 @@ services:
 volumes:
   postgres_data:
   redis_data:
+
+networks:
+  langlearn_net:
+    driver: bridge
