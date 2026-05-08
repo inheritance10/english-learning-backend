@@ -35,6 +35,10 @@ import { UserExamAttemptEntity } from './domain/entities/user-exam-attempt.entit
 import { AiGeneratedVariantEntity } from './domain/entities/ai-generated-variant.entity';
 import { ReadingActivityEntity } from './domain/entities/reading-activity.entity';
 import { ReadingActivityModule } from './application/reading-activity/reading-activity.module';
+import { UserSeenQuestionEntity } from './domain/entities/user-seen-question.entity';
+import { QuestionPoolModule } from './application/question-pool/question-pool.module';
+import { WritingActivityEntity } from './domain/entities/writing-activity.entity';
+import { WritingModule } from './application/writing/writing.module';
 
 @Module({
   imports: [
@@ -68,6 +72,8 @@ import { ReadingActivityModule } from './application/reading-activity/reading-ac
             UserExamAttemptEntity,
             AiGeneratedVariantEntity,
             ReadingActivityEntity,
+            UserSeenQuestionEntity,
+            WritingActivityEntity,
           ],
           synchronize: configService.get('NODE_ENV') !== 'production' || configService.get('FORCE_SYNC') === 'true',
           logging: configService.get('NODE_ENV') === 'development',
@@ -117,6 +123,8 @@ import { ReadingActivityModule } from './application/reading-activity/reading-ac
     WordBoosterModule,
     ExamPrepModule,
     ReadingActivityModule,
+    QuestionPoolModule,
+    WritingModule,
   ],
 })
 export class AppModule {}

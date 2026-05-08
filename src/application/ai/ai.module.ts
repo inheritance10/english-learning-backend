@@ -12,11 +12,13 @@ import { GenerateLearningPathUseCase } from './use-cases/generate-learning-path.
 import { DefineWordUseCase } from './use-cases/define-word.use-case';
 import { AiController } from '../../presentation/controllers/ai.controller';
 import { AuthModule } from '../auth/auth.module';
+import { QuestionPoolModule } from '../question-pool/question-pool.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([QuizQuestionEntity, UserProgressEntity, VocabularyItemEntity, TopicEntity]),
     AuthModule,
+    QuestionPoolModule,
   ],
   controllers: [AiController],
   providers: [GeminiService, GenerateQuizUseCase, AnalyzeAnswerUseCase, LessonChatUseCase, GenerateLearningPathUseCase, DefineWordUseCase],

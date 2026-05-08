@@ -602,6 +602,338 @@ Return ONLY valid JSON, no markdown, no commentary, with this EXACT shape:
     }
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // WRITING ACTIVITY
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Generate a writing scenario for any of the 6 activity types.
+   * The JSON shape is always the same; prompt content differs per type.
+   *
+   * Field semantics per type:
+   *  mail    → receivedMail = inbox email text
+   *  picture → receivedMail = vivid scene description (no real image needed)
+   *  social  → receivedMail = context card (what happened)
+   *  chat    → receivedMail = chat conversation (formatted as lines: "Alex: ...")
+   *  journal → receivedMail = reflective prompt question
+   *  whatif  → receivedMail = hypothetical scenario question
+   */
+  async generateWritingScenario(params: {
+    cefrLevel: string;
+    interest: string;
+    interestLabel: string;
+    language: 'en' | 'tr';
+    activityType?: string;
+  }): Promise<{
+    scenario: string;
+    receivedMail: string;
+    keyPoints: string[];
+    initialHint: string;
+  }> {
+    const { cefrLevel, interest, interestLabel, language, activityType = 'mail' } = params;
+    const seed = Math.random().toString(36).slice(2, 8).toUpperCase();
+    const uiLang = language === 'tr' ? 'Turkish' : 'English';
+
+    const prompt = this.buildWritingPrompt({
+      activityType,
+      cefrLevel,
+      interest,
+      interestLabel,
+      uiLang,
+      seed,
+    });
+
+    try {
+      if (!this.apiKeyConfigured) {
+        return this.getMockWritingScenario(interest, cefrLevel, language, activityType);
+      }
+
+      LoggerUtil.logGeminiRequest(this.logger, 'generateWritingScenario', { cefrLevel, interest, activityType }, this.modelName);
+      const result = await this.model.generateContent(prompt);
+      const text = result.response.text().trim();
+      LoggerUtil.logGeminiResponse(this.logger, 'generateWritingScenario', text.length);
+
+      const json = text.replace(/^```json?\n?/, '').replace(/\n?```$/, '');
+      const parsed = JSON.parse(json);
+
+      return {
+        scenario: String(parsed.scenario ?? ''),
+        receivedMail: String(parsed.receivedMail ?? ''),
+        keyPoints: Array.isArray(parsed.keyPoints)
+          ? parsed.keyPoints.slice(0, 3).map((k: any) => String(k))
+          : [],
+        initialHint: String(parsed.initialHint ?? ''),
+      };
+    } catch (err: any) {
+      LoggerUtil.logGeminiError(this.logger, 'generateWritingScenario', err, { cefrLevel, interest, activityType });
+      this.logger.warn(`Falling back to mock writing scenario (type=${activityType}). Error: ${err?.message}`);
+      return this.getMockWritingScenario(interest, cefrLevel, language, activityType);
+    }
+  }
+
+  /** Build a type-specific Gemini prompt. All types return the same JSON shape. */
+  private buildWritingPrompt(p: {
+    activityType: string;
+    cefrLevel: string;
+    interest: string;
+    interestLabel: string;
+    uiLang: string;
+    seed: string;
+  }): string {
+    const { activityType, cefrLevel, interest, interestLabel, uiLang, seed } = p;
+    const BASE = `Unique session ID (forces variety, do not include in output): ${seed}\n\nReturn ONLY valid JSON, no markdown, no commentary:\n{\n  "scenario": "string in ${uiLang}",\n  "receivedMail": "string",\n  "keyPoints": ["string in ${uiLang}", "string in ${uiLang}", "string in ${uiLang}"],\n  "initialHint": "string in English"\n}`;
+
+    switch (activityType) {
+      case 'mail':
+        return `You are an expert English writing coach creating a "Reply to an Email" exercise for a CEFR ${cefrLevel} learner interested in "${interest}" (${interestLabel}).
+${seed}
+- "receivedMail": a realistic incoming email (60-90 words in English, ${cefrLevel} complexity). Greeting + clear request + sign-off.
+- "scenario": 1-sentence task description in ${uiLang}.
+- "keyPoints": exactly 3 action items the user must address, in ${uiLang}, max 7 words each.
+- "initialHint": one English sentence-starter, e.g. "Thank you for your email regarding…"
+${BASE}`;
+
+      case 'picture':
+        return `You are an English writing coach creating a "Describe the Scene" exercise for a CEFR ${cefrLevel} learner interested in "${interest}" (${interestLabel}).
+${seed}
+- "receivedMail": a vivid text description of an imaginary scene/photo related to "${interest}" (50-80 words). Describe objects, colours, positions and what is happening. The learner will read this and write their own description paragraph.
+- "scenario": 1-sentence task in ${uiLang}, e.g. "Aşağıdaki sahneyi İngilizce olarak betimle."
+- "keyPoints": 3 checklist items in ${uiLang}: mention 3 objects, use Present Continuous for 2 actions, include 1 location/position phrase.
+- "initialHint": English sentence starter, e.g. "In this scene, I can see…"
+${BASE}`;
+
+      case 'social':
+        return `You are an English writing coach creating a "Social Media Caption" exercise for a CEFR ${cefrLevel} learner interested in "${interest}" (${interestLabel}).
+${seed}
+- "receivedMail": a short context card describing WHAT just happened related to "${interest}" (30-50 words, in English). E.g. "You just received the latest smartphone as a gift. You're at home unboxing it, excited to share it with your followers."
+- "scenario": 1-sentence task in ${uiLang} telling the learner to write a 280-char tweet or Instagram caption.
+- "keyPoints": 3 checklist items in ${uiLang}: max 280 characters, at least 2 hashtags, catchy/informal tone.
+- "initialHint": short English caption starter, e.g. "Just unboxed my…"
+${BASE}`;
+
+      case 'chat':
+        return `You are an English writing coach creating a "Chat Dialogue Completion" exercise for a CEFR ${cefrLevel} learner interested in "${interest}" (${interestLabel}).
+${seed}
+- "receivedMail": a short WhatsApp/SMS conversation (3-5 messages) ending with a message the user must reply to. Format each line as "Name: message". Theme: "${interest}". The user needs to decline/accept/suggest something politely.
+- "scenario": 1-sentence task in ${uiLang}, e.g. "Arkadaşın seni bir etkinliğe davet etti. Kibarca reddet ve alternatif öner."
+- "keyPoints": 3 checklist items in ${uiLang}: politely decline/accept, give a reason, suggest an alternative.
+- "initialHint": English sentence starter, e.g. "Hey! That sounds great, but…"
+${BASE}`;
+
+      case 'journal':
+        return `You are an English writing coach creating a "Daily Journal" exercise for a CEFR ${cefrLevel} learner interested in "${interest}" (${interestLabel}).
+${seed}
+- "receivedMail": a reflective journaling prompt question in English, related to "${interest}" (1-2 sentences that spark personal reflection). E.g. "Think about the last time something in your daily life surprised you. What happened and how did you feel?"
+- "scenario": 1-sentence task in ${uiLang} asking user to write 3-5 sentences about a personal experience.
+- "keyPoints": 3 checklist items in ${uiLang}: use Past Simple tense, express a feeling/emotion, write at least 3 sentences.
+- "initialHint": English diary entry starter, e.g. "Yesterday, I…" or "Today was interesting because…"
+${BASE}`;
+
+      case 'whatif':
+        return `You are an English writing coach creating a "What If…?" creative exercise for a CEFR ${cefrLevel} learner interested in "${interest}" (${interestLabel}).
+${seed}
+- "receivedMail": a creative hypothetical scenario question in English related to "${interest}" (1-2 sentences). Use "What if…" or "Imagine that…". Make it fun and thought-provoking. E.g. "What if you could travel back in time to any moment in the history of technology? Where would you go and why?"
+- "scenario": 1-sentence task in ${uiLang} asking user to answer the what-if question creatively.
+- "keyPoints": 3 checklist items in ${uiLang}: use conditional (If I were…/If I had…), give at least 2 reasons, be creative and specific.
+- "initialHint": English conditional starter, e.g. "If I could…, I would…"
+${BASE}`;
+
+      default:
+        return this.buildWritingPrompt({ ...p, activityType: 'mail' });
+    }
+  }
+
+  /**
+   * Analyze the user's written reply and return an improved "native" version
+   * with highlighted key changes and a pro-tip.
+   */
+  async analyzeWriting(params: {
+    userText: string;
+    scenario: string;
+    receivedMail: string;
+    cefrLevel: string;
+    language: 'en' | 'tr';
+  }): Promise<{
+    improved: string;
+    proTip: string;
+    highlightedPhrases: string[];
+  }> {
+    const { userText, scenario, receivedMail, cefrLevel, language } = params;
+    const uiLang = language === 'tr' ? 'Turkish' : 'English';
+
+    const prompt = `
+You are Octo, a friendly English writing mentor. A learner at CEFR level ${cefrLevel} has written the following reply to an email.
+
+SCENARIO: ${scenario}
+
+ORIGINAL EMAIL RECEIVED:
+"""
+${receivedMail}
+"""
+
+USER'S REPLY (what they wrote):
+"""
+${userText}
+"""
+
+YOUR TASK:
+1. Rewrite the user's reply as a natural, native-sounding English response — keep their intended meaning but fix grammar, word choice, register and flow. Max 150 words.
+2. Write a short "proTip" in ${uiLang} (1-2 sentences) highlighting ONE specific improvement area (e.g. formal register, transition words, politeness markers). Make it encouraging and specific.
+3. List 3-5 short phrases (exact sub-strings from YOUR improved version) that represent meaningful upgrades. These will be highlighted in green in the UI.
+
+Return ONLY valid JSON, no markdown, no commentary:
+{
+  "improved": "The naturally rewritten reply in English.",
+  "proTip": "Encouraging tip in ${uiLang}.",
+  "highlightedPhrases": ["phrase1 from improved", "phrase2 from improved", "phrase3 from improved"]
+}
+`;
+
+    try {
+      if (!this.apiKeyConfigured) {
+        return this.getMockWritingAnalysis(userText);
+      }
+
+      LoggerUtil.logGeminiRequest(this.logger, 'analyzeWriting', { cefrLevel }, this.modelName);
+      const result = await this.model.generateContent(prompt);
+      const text = result.response.text().trim();
+      LoggerUtil.logGeminiResponse(this.logger, 'analyzeWriting', text.length);
+
+      const json = text.replace(/^```json?\n?/, '').replace(/\n?```$/, '');
+      const parsed = JSON.parse(json);
+
+      return {
+        improved: String(parsed.improved ?? ''),
+        proTip: String(parsed.proTip ?? ''),
+        highlightedPhrases: Array.isArray(parsed.highlightedPhrases)
+          ? parsed.highlightedPhrases.map((p: any) => String(p))
+          : [],
+      };
+    } catch (err: any) {
+      LoggerUtil.logGeminiError(this.logger, 'analyzeWriting', err, { cefrLevel });
+      this.logger.warn(`Falling back to mock writing analysis. Error: ${err?.message}`);
+      return this.getMockWritingAnalysis(userText);
+    }
+  }
+
+  private getMockWritingScenario(
+    interest: string,
+    cefrLevel: string,
+    language: 'en' | 'tr',
+    activityType = 'mail',
+  ): { scenario: string; receivedMail: string; keyPoints: string[]; initialHint: string } {
+    const isTr = language === 'tr';
+
+    const mocks: Record<string, { scenario: string; receivedMail: string; keyPoints: string[]; initialHint: string }> = {
+      mail: {
+        scenario: isTr
+          ? 'Bir iş arkadaşın sana toplantı talebi gönderdi. İngilizce olarak yanıt yaz.'
+          : 'A colleague sent you a meeting request. Write a reply in English.',
+        receivedMail:
+          `Hi,\n\nI hope you're doing well! I wanted to check if you're available for a quick ` +
+          `30-minute sync on Thursday at 2 PM to discuss the upcoming ${interest} project.\n\n` +
+          `Could you let me know if that time works for you? Also, would you prefer to meet ` +
+          `in the conference room or online?\n\nLooking forward to your reply!\n\nBest,\nAlex`,
+        keyPoints: isTr
+          ? ['Toplantı saatini onayla', 'Toplantı yerini / online seçeneğini sor veya belirt', 'Teşekkür et']
+          : ['Confirm the meeting time', 'Confirm location or online option', 'Thank the sender'],
+        initialHint: 'Thank you for reaching out. I would be happy to...',
+      },
+
+      picture: {
+        scenario: isTr
+          ? 'Aşağıdaki sahneyi en az 3 nesne ve 2 eylem içerecek şekilde İngilizce betimle.'
+          : 'Describe the scene below with at least 3 objects and 2 actions in English.',
+        receivedMail:
+          `A busy coffee shop on a rainy afternoon. Near the window, a young woman in a red coat is typing on her laptop. ` +
+          `Next to her, two friends are laughing and sharing a piece of cake. A barista behind the counter is pouring ` +
+          `steaming milk into a tall glass. On the walls, there are black-and-white photos of the city. ` +
+          `The floor is wooden and slightly wet from people coming in from the rain.`,
+        keyPoints: isTr
+          ? ['En az 3 nesne belirt', '2 eylem için Present Continuous kullan', 'Yer/konum ifadesi ekle']
+          : ['Mention at least 3 objects', 'Use Present Continuous for 2 actions', 'Include a location/position phrase'],
+        initialHint: 'In this scene, I can see...',
+      },
+
+      social: {
+        scenario: isTr
+          ? 'Az önce harika bir şey yaşadın. Bunun için etkileyici bir sosyal medya paylaşımı yaz (max 280 karakter).'
+          : 'You just experienced something great. Write an engaging social media post (max 280 chars).',
+        receivedMail:
+          `You just finished a ${interest}-themed online course and received your certificate. ` +
+          `You're proud of yourself and want to inspire your followers to learn new skills too.`,
+        keyPoints: isTr
+          ? ['Maksimum 280 karakter', 'En az 2 hashtag ekle', 'Kısa, etkileyici ve günlük dil kullan']
+          : ['Max 280 characters', 'Include at least 2 hashtags', 'Short, catchy and informal tone'],
+        initialHint: 'Just completed my...',
+      },
+
+      chat: {
+        scenario: isTr
+          ? 'Arkadaşın seni bir etkinliğe davet etti. Kibarca reddet ve alternatif öner.'
+          : 'Your friend invited you to an event. Politely decline and suggest an alternative.',
+        receivedMail:
+          `Sam: Hey! Are you free this Saturday evening? 🎉\n` +
+          `You: I'm not sure yet, what's up?\n` +
+          `Sam: We're having a ${interest} meetup at the community centre — games, snacks, the whole deal! You should totally come.\n` +
+          `Sam: It starts at 7 PM. Would be so fun if you came! 😊`,
+        keyPoints: isTr
+          ? ['Kibarca reddet', 'Makul bir bahane yaz', 'Alternatif bir buluşma öner']
+          : ['Politely decline the invitation', 'Give a believable reason', 'Suggest an alternative'],
+        initialHint: 'Hey! That sounds amazing, but unfortunately...',
+      },
+
+      journal: {
+        scenario: isTr
+          ? 'Bugün seni etkileyen bir anı geçmiş zamanı kullanarak 3-5 cümlede İngilizce anlat.'
+          : 'Write 3-5 sentences in English about a moment that affected you today. Use Past Simple.',
+        receivedMail:
+          `Think about the last time you learned or discovered something new related to ${interest}. ` +
+          `What happened exactly? How did you feel in that moment, and what did you take away from it?`,
+        keyPoints: isTr
+          ? ['Past Simple (geçmiş zaman) kullan', 'Bir duygu veya tepki ifade et', 'En az 3 cümle yaz']
+          : ['Use Past Simple tense throughout', 'Express a feeling or reaction', 'Write at least 3 sentences'],
+        initialHint: 'Yesterday, I...',
+      },
+
+      whatif: {
+        scenario: isTr
+          ? 'Aşağıdaki "ya olsaydı?" sorusunu koşul cümlesi kullanarak yaratıcı bir şekilde yanıtla.'
+          : 'Answer the "what if?" question below creatively, using conditional sentences.',
+        receivedMail:
+          `What if you were given unlimited funding to build a ${interest}-focused startup or project? ` +
+          `What would you create, who would it help, and what would your first step be?`,
+        keyPoints: isTr
+          ? ['Koşul cümlesi kullan (If I were / If I had)', 'En az 2 neden veya detay ver', 'Yaratıcı ve özgün ol']
+          : ['Use conditional (If I were… / If I had…)', 'Give at least 2 reasons or details', 'Be creative and specific'],
+        initialHint: 'If I had the chance, I would...',
+      },
+    };
+
+    return mocks[activityType] ?? mocks['mail'];
+  }
+
+  private getMockWritingAnalysis(
+    userText: string,
+  ): { improved: string; proTip: string; highlightedPhrases: string[] } {
+    return {
+      improved:
+        `Thank you for reaching out. Thursday at 2 PM works perfectly for me.\n\n` +
+        `Regarding the venue, I would prefer to meet online via video call, as it will be ` +
+        `more convenient for both of us. Please feel free to send me the meeting link whenever you're ready.\n\n` +
+        `Looking forward to our discussion!\n\nBest regards`,
+      proTip:
+        'Harika bir başlangıç! Resmi e-postalarda "I would prefer" veya "I would be happy to" gibi kalıplar çok daha kibar ve doğal bir ton yaratır.',
+      highlightedPhrases: [
+        'Thank you for reaching out',
+        'works perfectly for me',
+        'I would prefer to meet online',
+        'Please feel free to send me',
+        'Looking forward to our discussion',
+      ],
+    };
+  }
+
   private getMockReadingActivity(
     interestLabel: string,
     cefrLevel: string,
