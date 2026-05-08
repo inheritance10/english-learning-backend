@@ -114,10 +114,13 @@ export class QuizPoolService {
         source: 'gemini' as const,
       }));
 
-      // Async: Gemini sorularını havuza kaydet (response'u bloklamaz)
-      this.saveGeminiQuestionsToPool(topicId, cefrLevel, language, raw).catch((err) =>
-        this.logger.warn(`Failed to persist Gemini questions: ${err?.message}`),
-      );
+      // Gemini sorularını havuza kaydet ve seen olarak işaretle
+      // (response'u bloklamaz; fire-and-forget + seen kaydı)
+      this.saveGeminiQuestionsToPool(topicId, cefrLevel, language, raw)
+        .then((saved) => this.markAsSeen(userId, saved, cefrLevel))
+        .catch((err) =>
+          this.logger.warn(`Failed to persist/mark Gemini questions: ${err?.message}`),
+        );
     } catch (err: any) {
       this.logger.error(`Gemini fallback failed: ${err?.message}`);
     }
@@ -195,7 +198,7 @@ export class QuizPoolService {
           expiresAt,
         })),
       )
-      .orUpdate(['expires_at', 'seen_at_level'], ['userId', 'questionId'])
+      .orUpdate(['expiresAt', 'seenAtLevel'], ['userId', 'questionId'])
       .execute();
   }
 
@@ -229,7 +232,7 @@ export class QuizPoolService {
     cefrLevel: string,
     language: 'en' | 'tr',
     questions: Awaited<ReturnType<typeof this.gemini.generateQuizQuestions>>,
-  ): Promise<void> {
+  ): Promise<QuizQuestionEntity[]> {
     const entities = questions.map((q) => {
       const correctText = q.options[q.correctIndex] ?? q.options[0];
       return this.questionRepo.create({
@@ -251,8 +254,9 @@ export class QuizPoolService {
       });
     });
 
-    await this.questionRepo.save(entities);
-    this.logger.log(`Async-saved ${entities.length} Gemini questions to pool for topic=${topicId}.`);
+    const saved = await this.questionRepo.save(entities);
+    this.logger.log(`Async-saved ${saved.length} Gemini questions to pool for topic=${topicId}.`);
+    return saved;
   }
 
   private async triggerRefillIfLow(
