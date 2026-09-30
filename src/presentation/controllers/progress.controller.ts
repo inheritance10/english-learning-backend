@@ -1,11 +1,13 @@
-import { Controller, Get, Post, Body, UseGuards } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { Controller, Get, Post, Body, Query, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { IsString, IsNumber, Min, Max } from 'class-validator';
 import { JwtAuthGuard } from '../guards/jwt-auth.guard';
 import { CurrentUser } from '../decorators/current-user.decorator';
 import { UserEntity } from '../../domain/entities/user.entity';
 import { GetProgressUseCase } from '../../application/progress/use-cases/get-progress.use-case';
 import { UpdateStreakUseCase, RecordProgressDto } from '../../application/progress/use-cases/update-streak.use-case';
+import { GetActivityStatsUseCase } from '../../application/progress/use-cases/get-activity-stats.use-case';
+import { GetActivityHistoryUseCase, ActivityType } from '../../application/progress/use-cases/get-activity-history.use-case';
 
 class RecordProgressDtoInput {
   @IsString()
@@ -29,6 +31,8 @@ export class ProgressController {
   constructor(
     private readonly getProgress: GetProgressUseCase,
     private readonly updateStreak: UpdateStreakUseCase,
+    private readonly getActivityStats: GetActivityStatsUseCase,
+    private readonly getActivityHistory: GetActivityHistoryUseCase,
   ) {}
 
   @Get()
@@ -53,5 +57,23 @@ export class ProgressController {
   @ApiOperation({ summary: 'Get current streak information' })
   async getStreak(@CurrentUser() user: UserEntity) {
     return this.updateStreak.getStreak(user.id);
+  }
+
+  @Get('activity-stats')
+  @ApiOperation({ summary: 'Get reading & writing activity stats overview' })
+  async getStats(@CurrentUser() user: UserEntity) {
+    return this.getActivityStats.execute(user);
+  }
+
+  @Get('activity-history')
+  @ApiOperation({ summary: 'Get paginated reading & writing activity history' })
+  @ApiQuery({ name: 'type', enum: ['all', 'reading', 'writing'], required: false })
+  @ApiQuery({ name: 'page', type: Number, required: false })
+  async getHistory(
+    @CurrentUser() user: UserEntity,
+    @Query('type') type: ActivityType = 'all',
+    @Query('page') page = 1,
+  ) {
+    return this.getActivityHistory.execute(user, type, Number(page));
   }
 }

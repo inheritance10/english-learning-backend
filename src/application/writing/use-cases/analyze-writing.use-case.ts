@@ -20,6 +20,8 @@ export class AnalyzeWritingUseCase {
     private readonly gemini: GeminiService,
     @InjectRepository(WritingActivityEntity)
     private readonly repo: Repository<WritingActivityEntity>,
+    @InjectRepository(UserEntity)
+    private readonly userRepo: Repository<UserEntity>,
   ) {}
 
   async execute(
@@ -33,9 +35,7 @@ export class AnalyzeWritingUseCase {
 
     const language = (user.language ?? 'tr') as 'en' | 'tr';
 
-    this.logger.log(
-      `Analyzing writing for user=${user.id} activity=${activityId}`,
-    );
+    this.logger.log(`Analyzing writing for user=${user.id} activity=${activityId}`);
 
     const analysis = await this.gemini.analyzeWriting({
       userText: input.userText,
@@ -56,6 +56,19 @@ export class AnalyzeWritingUseCase {
     activity.tokensEarned = TOKENS_PER_WRITING;
     activity.completedAt = new Date();
 
-    return this.repo.save(activity);
+    const saved = await this.repo.save(activity);
+
+    try {
+      await this.userRepo
+        .createQueryBuilder()
+        .update(UserEntity)
+        .set({ totalTokens: () => `total_tokens + ${TOKENS_PER_WRITING}` })
+        .where('id = :id', { id: user.id })
+        .execute();
+    } catch (err: any) {
+      this.logger.warn(`Failed to award writing tokens for user ${user.id}: ${err?.message}`);
+    }
+
+    return saved;
   }
 }
