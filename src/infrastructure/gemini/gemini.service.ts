@@ -21,14 +21,12 @@ export class GeminiService {
     this.modelName = this.configService.get<string>('GEMINI_MODEL', 'gemini-2.5-flash');
     this.apiKeyConfigured = !!apiKey && !apiKey.startsWith('your-');
     if (!this.apiKeyConfigured) {
-      console.error('No API key configured for GeminiService');
       LoggerUtil.logInfo(
         this.logger,
         'GeminiService/Init',
         '⚠️  GEMINI_API_KEY not configured — AI features will return mock data. Set GEMINI_API_KEY in .env'
       );
     } else {
-       console.error('gfsgsg');
       LoggerUtil.logInfo(
         this.logger,
         'GeminiService/Init',
@@ -191,76 +189,45 @@ Schema:
     }
   }
 
-  async analyzeAnswer(params: {
+  /** Direct explanation of why the learner's chosen option is wrong. Throws on failure. */
+  async explainWrongAnswer(params: {
     question: string;
+    options: string[];
     correctAnswer: string;
     userAnswer: string;
     cefrLevel: string;
     language: 'en' | 'tr';
-  }): Promise<AnswerAnalysis> {
-    const { question, correctAnswer, userAnswer, cefrLevel, language } = params;
-    const isCorrect = correctAnswer === userAnswer;
+  }): Promise<{ feedback: string; rule: string; example: string }> {
+    const { question, options, correctAnswer, userAnswer, cefrLevel, language } = params;
+    if (!this.apiKeyConfigured) throw new Error('Gemini API key not configured');
+    const lang = language === 'tr' ? 'Turkish' : 'English';
 
     const prompt = `
-You are an empathetic English teacher using the Socratic method.
+You are a friendly, clear English teacher. A ${cefrLevel} learner answered a multiple-choice question wrongly.
 
 Question: "${question}"
+Options: ${options.map((o) => `"${o}"`).join(', ')}
+Learner chose: "${userAnswer}"
 Correct answer: "${correctAnswer}"
-Student's answer: "${userAnswer}"
-Student level: ${cefrLevel}
 
-The student answered ${isCorrect ? 'correctly' : 'incorrectly'}.
+Explain directly — no questions back to the learner, no "you are close" filler.
+- "feedback": 2 short sentences in ${lang}. First: exactly why "${userAnswer}" does not work in THIS sentence. Second: why "${correctAnswer}" is right. Quote the English words as they are.
+- "rule": the rule in one short sentence in ${lang}.
+- "example": one new, natural English example sentence that uses the correct form.
 
-${!isCorrect ? `
-Guide them to understand WHY they were wrong using questions, not direct answers.
-- Ask 1-2 leading questions that help them discover the rule
-- Then give a brief, clear explanation
-` : `
-Reinforce what they did right and add an interesting related fact.
-`}
+Return JSON: { "feedback": string, "rule": string, "example": string }`;
 
-Respond in ${language === 'tr' ? 'Turkish' : 'English'}.
-Return ONLY valid JSON, no markdown:
-{
-  "isCorrect": ${isCorrect},
-  "feedback": "Your main feedback message",
-  "socraticQuestions": ["Question 1 to guide thinking", "Question 2 (optional)"],
-  "rule": "The grammar/vocabulary rule in one sentence",
-  "example": "An example sentence showing correct usage",
-  "xpEarned": ${isCorrect ? 10 : 3}
-}
-`;
-
+    LoggerUtil.logGeminiRequest(this.logger, 'explainWrongAnswer', { cefrLevel, language }, this.modelName);
     try {
-      if (!this.apiKeyConfigured) {
-        LoggerUtil.logInfo(this.logger, 'analyzeAnswer', 'Using mock analysis (API key not configured)');
-        return {
-          isCorrect,
-          feedback: isCorrect ? '👍 Doğru!' : '❌ Biraz daha çalış.',
-          socraticQuestions: [],
-          rule: '',
-          example: '',
-          xpEarned: isCorrect ? 10 : 3,
-        };
-      }
-
-      LoggerUtil.logGeminiRequest(this.logger, 'analyzeAnswer', { cefrLevel, isCorrect }, this.modelName);
-      const result = await this.model.generateContent(prompt);
-      const text = result.response.text().trim();
-      LoggerUtil.logGeminiResponse(this.logger, 'analyzeAnswer', text.length);
-      const json = text.replace(/^```json?\n?/, '').replace(/\n?```$/, '');
-      return JSON.parse(json) as AnswerAnalysis;
+      const result = await this.jsonModel.generateContent(prompt);
+      const parsed: any = parseLenientJson(result.response.text());
+      const str = (v: unknown) => String(v ?? '').trim();
+      const out = { feedback: str(parsed?.feedback), rule: str(parsed?.rule), example: str(parsed?.example) };
+      if (!out.feedback) throw new Error('Empty explanation');
+      return out;
     } catch (err: any) {
-      LoggerUtil.logGeminiError(this.logger, 'analyzeAnswer', err, { cefrLevel, isCorrect });
-      this.logger.warn(`Falling back to basic feedback. Original error: ${err?.message}`);
-      return {
-        isCorrect,
-        feedback: isCorrect ? '👍 Doğru!' : '❌ Biraz daha çalış.',
-        socraticQuestions: [],
-        rule: '',
-        example: '',
-        xpEarned: isCorrect ? 10 : 3,
-      };
+      LoggerUtil.logGeminiError(this.logger, 'explainWrongAnswer', err, { cefrLevel });
+      throw err;
     }
   }
 
@@ -967,15 +934,6 @@ export interface PoolQuestion {
   explanationTr: string;
   hint: string;
   grammarPoint: string;
-}
-
-export interface AnswerAnalysis {
-  isCorrect: boolean;
-  feedback: string;
-  socraticQuestions: string[];
-  rule: string;
-  example: string;
-  xpEarned: number;
 }
 
 export interface LearningPathItem {

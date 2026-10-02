@@ -5,6 +5,7 @@ import { UserProgressEntity } from '../../domain/entities/user-progress.entity';
 import { VocabularyItemEntity } from '../../domain/entities/vocabulary-item.entity';
 import { TopicEntity } from '../../domain/entities/topic.entity';
 import { WordDefinitionEntity } from '../../domain/entities/word-definition.entity';
+import { QuizAnswerExplanationEntity } from '../../domain/entities/quiz-answer-explanation.entity';
 import { GeminiService } from '../../infrastructure/gemini/gemini.service';
 import { GenerateQuizUseCase } from './use-cases/generate-quiz.use-case';
 import { AnalyzeAnswerUseCase } from './use-cases/analyze-answer.use-case';
@@ -17,7 +18,7 @@ import { QuestionPoolModule } from '../question-pool/question-pool.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([QuizQuestionEntity, UserProgressEntity, VocabularyItemEntity, TopicEntity, WordDefinitionEntity]),
+    TypeOrmModule.forFeature([QuizQuestionEntity, UserProgressEntity, VocabularyItemEntity, TopicEntity, WordDefinitionEntity, QuizAnswerExplanationEntity]),
     AuthModule,
     QuestionPoolModule,
   ],

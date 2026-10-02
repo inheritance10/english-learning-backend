@@ -1,6 +1,6 @@
 import { Controller, Post, Body, UseGuards, Get } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
-import { IsString, IsArray, IsOptional, IsNumber, Min, Max, ValidateNested } from 'class-validator';
+import { IsString, IsArray, IsOptional, IsNumber, IsInt, IsUUID, Min, Max, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 import { JwtAuthGuard } from '../guards/jwt-auth.guard';
 import { CurrentUser } from '../decorators/current-user.decorator';
@@ -43,13 +43,16 @@ class AnalyzeAnswerDto {
   @IsString()
   topicId: string;
 
+  /** Pool question id: enables the shared explanation cache. */
   @IsOptional()
-  @IsString()
-  word?: string;
+  @IsUUID()
+  questionId?: string;
 
   @IsOptional()
-  @IsString()
-  translation?: string;
+  @IsInt()
+  @Min(0)
+  @Max(3)
+  chosenIndex?: number;
 }
 
 class ChatMessageDto {

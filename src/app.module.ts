@@ -28,6 +28,7 @@ import { UserWordSrsEntity } from './domain/entities/user-word-srs.entity';
 import { StoryEntity } from './domain/entities/story.entity';
 import { ReadingPassageEntity } from './domain/entities/reading-passage.entity';
 import { WordDefinitionEntity } from './domain/entities/word-definition.entity';
+import { QuizAnswerExplanationEntity } from './domain/entities/quiz-answer-explanation.entity';
 import { WritingTaskEntity } from './domain/entities/writing-task.entity';
 import { WordBoosterModule } from './application/word-booster/word-booster.module';
 import { ExamPrepModule } from './application/exam-prep/exam-prep.module';
@@ -77,6 +78,7 @@ import { WritingModule } from './application/writing/writing.module';
             ReadingActivityEntity,
             ReadingPassageEntity,
             WordDefinitionEntity,
+            QuizAnswerExplanationEntity,
             UserSeenQuestionEntity,
             WritingActivityEntity,
             WritingTaskEntity,

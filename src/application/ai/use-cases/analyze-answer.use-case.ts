@@ -1,72 +1,94 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { GeminiService } from '../../../infrastructure/gemini/gemini.service';
-import { VocabularyItemEntity, VocabularyStatus } from '../../../domain/entities/vocabulary-item.entity';
-import { UserProgressEntity } from '../../../domain/entities/user-progress.entity';
 import { UserEntity } from '../../../domain/entities/user.entity';
+import { QuizQuestionEntity } from '../../../domain/entities/quiz-question.entity';
+import {
+  QuizAnswerExplanationEntity,
+  type AnswerExplanation,
+} from '../../../domain/entities/quiz-answer-explanation.entity';
 
 export interface AnalyzeAnswerDto {
   question: string;
   correctAnswer: string;
   userAnswer: string;
-  word?: string;
-  translation?: string;
   topicId: string;
+  questionId?: string;
+  chosenIndex?: number;
 }
 
+/** Response shape kept compatible with the app's AnswerAnalysis type. */
+export interface AnswerAnalysisResult extends AnswerExplanation {
+  isCorrect: boolean;
+  socraticQuestions: string[];
+  xpEarned: number;
+}
+
+/**
+ * Explains a wrong quiz answer. For pool questions the explanation of each
+ * (question, chosen option, language) is generated once and shared by all users.
+ */
 @Injectable()
 export class AnalyzeAnswerUseCase {
+  private readonly logger = new Logger(AnalyzeAnswerUseCase.name);
+
   constructor(
     private readonly gemini: GeminiService,
-    @InjectRepository(VocabularyItemEntity)
-    private readonly vocabRepo: Repository<VocabularyItemEntity>,
-    @InjectRepository(UserProgressEntity)
-    private readonly progressRepo: Repository<UserProgressEntity>,
+    @InjectRepository(QuizQuestionEntity)
+    private readonly questionRepo: Repository<QuizQuestionEntity>,
+    @InjectRepository(QuizAnswerExplanationEntity)
+    private readonly explanationRepo: Repository<QuizAnswerExplanationEntity>,
   ) {}
 
-  async execute(dto: AnalyzeAnswerDto, user: UserEntity) {
-    const analysis = await this.gemini.analyzeAnswer({
-      question: dto.question,
-      correctAnswer: dto.correctAnswer,
-      userAnswer: dto.userAnswer,
-      cefrLevel: user.cefrLevel ?? 'B1',
-      language: user.language as 'en' | 'tr',
-    });
+  async execute(dto: AnalyzeAnswerDto, user: UserEntity): Promise<AnswerAnalysisResult> {
+    const language = (user.language === 'en' ? 'en' : 'tr') as 'en' | 'tr';
+    const cefrLevel = user.cefrLevel ?? 'B1';
 
-    // Save wrong answer word to vocabulary bank
-    if (!analysis.isCorrect && dto.word) {
-      const existing = await this.vocabRepo.findOne({
-        where: { userId: user.id, word: dto.word },
+    const question =
+      dto.questionId && dto.chosenIndex !== undefined
+        ? await this.questionRepo.findOne({ where: { id: dto.questionId } })
+        : null;
+
+    // Not a pool question (or unknown id): explain without caching
+    if (!question || dto.chosenIndex === undefined || !question.options[dto.chosenIndex]) {
+      const explanation = await this.gemini.explainWrongAnswer({
+        question: dto.question,
+        options: [],
+        correctAnswer: dto.correctAnswer,
+        userAnswer: dto.userAnswer,
+        cefrLevel,
+        language,
       });
-      if (!existing) {
-        await this.vocabRepo.save(
-          this.vocabRepo.create({
-            userId: user.id,
-            word: dto.word,
-            translation: dto.translation ?? '',
-            definition: analysis.rule,
-            exampleSentence: analysis.example,
-            status: VocabularyStatus.LEARNING,
-            topicId: dto.topicId,
-          }),
-        );
-      }
+      return this.toResult(explanation);
     }
 
-    // Update XP in progress
-    const today = new Date().toISOString().split('T')[0];
-    let progress = await this.progressRepo.findOne({
-      where: { userId: user.id, date: today },
+    const key = { questionId: question.id, chosenIndex: dto.chosenIndex, language };
+    const cached = await this.explanationRepo.findOne({ where: key });
+    if (cached) return this.toResult(cached.explanation);
+
+    // Use stored question data, not client-sent text, so the cache can't be poisoned
+    const explanation = await this.gemini.explainWrongAnswer({
+      question: question.questionText,
+      options: question.options,
+      correctAnswer: question.options[question.correctIndex ?? 0],
+      userAnswer: question.options[dto.chosenIndex],
+      cefrLevel: question.cefrLevel ?? cefrLevel,
+      language,
     });
-    if (!progress) {
-      progress = this.progressRepo.create({ userId: user.id, date: today, xpEarned: 0, questionsAnswered: 0, correctAnswers: 0 });
-    }
-    progress.xpEarned += analysis.xpEarned;
-    progress.questionsAnswered += 1;
-    if (analysis.isCorrect) progress.correctAnswers += 1;
-    await this.progressRepo.save(progress);
 
-    return analysis;
+    await this.explanationRepo
+      .createQueryBuilder()
+      .insert()
+      .values({ ...key, explanation })
+      .orIgnore()
+      .execute();
+    this.logger.log(`Stored explanation for question ${question.id} option ${dto.chosenIndex} (${language}).`);
+
+    return this.toResult(explanation);
+  }
+
+  private toResult(e: AnswerExplanation): AnswerAnalysisResult {
+    return { isCorrect: false, feedback: e.feedback, rule: e.rule, example: e.example, socraticQuestions: [], xpEarned: 0 };
   }
 }
