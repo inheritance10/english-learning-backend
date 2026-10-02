@@ -5,6 +5,7 @@ import { SubscriptionEntity } from '../../domain/entities/subscription.entity';
 import { UserEntity } from '../../domain/entities/user.entity';
 import { VerifyReceiptUseCase } from './use-cases/verify-receipt.use-case';
 import { CheckTrialUseCase } from './use-cases/check-trial.use-case';
+import { MockCheckoutUseCase } from './use-cases/mock-checkout.use-case';
 import { SubscriptionController } from '../../presentation/controllers/subscription.controller';
 import { AuthModule } from '../auth/auth.module';
 
@@ -15,7 +16,7 @@ import { AuthModule } from '../auth/auth.module';
     AuthModule,
   ],
   controllers: [SubscriptionController],
-  providers: [VerifyReceiptUseCase, CheckTrialUseCase],
+  providers: [VerifyReceiptUseCase, CheckTrialUseCase, MockCheckoutUseCase],
   exports: [VerifyReceiptUseCase, CheckTrialUseCase],
 })
 export class SubscriptionModule {}

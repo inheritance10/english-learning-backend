@@ -14,6 +14,7 @@ import {
   WritingActivityEntity,
   WritingTurn,
 } from '../../../domain/entities/writing-activity.entity';
+import { UpdateStreakUseCase } from '../../progress/use-cases/update-streak.use-case';
 
 /** Tokens awarded per turn the learner gets right. */
 const TOKENS_PER_GOOD_TURN = 4;
@@ -37,6 +38,7 @@ export class SubmitWritingTurnUseCase {
     private readonly repo: Repository<WritingActivityEntity>,
     @InjectRepository(UserEntity)
     private readonly userRepo: Repository<UserEntity>,
+    private readonly updateStreak: UpdateStreakUseCase,
   ) {}
 
   async execute(activityId: string, text: string, user: UserEntity): Promise<SubmitWritingTurnResult> {
@@ -79,17 +81,21 @@ export class SubmitWritingTurnUseCase {
     }
     await this.repo.save(activity);
 
-    if (isLastTurn && activity.tokensEarned > 0) {
-      try {
-        await this.userRepo
-          .createQueryBuilder()
-          .update(UserEntity)
-          .set({ totalTokens: () => `total_tokens + ${activity.tokensEarned}` })
-          .where('id = :id', { id: user.id })
-          .execute();
-      } catch (err: any) {
-        this.logger.warn(`Failed to award writing tokens for user ${user.id}: ${err?.message}`);
+    if (isLastTurn) {
+      if (activity.tokensEarned > 0) {
+        try {
+          await this.userRepo
+            .createQueryBuilder()
+            .update(UserEntity)
+            .set({ totalTokens: () => `total_tokens + ${activity.tokensEarned}` })
+            .where('id = :id', { id: user.id })
+            .execute();
+        } catch (err: any) {
+          this.logger.warn(`Failed to award writing tokens for user ${user.id}: ${err?.message}`);
+        }
       }
+      // Update streak (non-blocking)
+      this.updateStreak.recordActivity(user.id).catch(() => undefined);
     }
 
     return {

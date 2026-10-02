@@ -341,11 +341,11 @@ Requirements:
 - Use simple vocabulary appropriate for ${cefrLevel}
 - Make it fun and memorable (can be slightly humorous)
 - Write the story in English
-- Provide a ${language === 'tr' ? 'Turkish' : 'English'} title
+- Provide an English title
 
 Return ONLY valid JSON, no markdown:
 {
-  "title": "Story title in ${language === 'tr' ? 'Turkish' : 'English'}",
+  "title": "Story title in English",
   "content": "The full story in English",
   "wordHighlights": ["list", "of", "the", "target", "words", "actually", "used"]
 }
@@ -354,7 +354,7 @@ Return ONLY valid JSON, no markdown:
     try {
       if (!this.apiKeyConfigured) {
         return {
-          title: 'Günün Hikayesi',
+          title: "Today's Story",
           content: `Bu kelimelerle ilgili bir hikaye: ${wordList}. (Mock - API key not configured)`,
           wordHighlights: words,
         };
@@ -369,7 +369,7 @@ Return ONLY valid JSON, no markdown:
     } catch (err: any) {
       LoggerUtil.logGeminiError(this.logger, 'generateDailyStory', err, { wordCount: words.length });
       return {
-        title: 'Günün Hikayesi',
+        title: "Today's Story",
         content: `Today's words: ${wordList}`,
         wordHighlights: words,
       };
@@ -527,7 +527,7 @@ TEXT
 - 120-170 words, 3 short paragraphs separated by a blank line ("\\n\\n").
 - An engaging, modern story or article clearly about "${interestLabel}".
 - Give characters varied, international first names (avoid overused ones like Sarah, Tom, John, Anna).
-- "title": short and catchy, in ${uiLang}. "topicLabel": broad category in UPPERCASE ${uiLang}.
+- "title": short and catchy, in English. "topicLabel": broad category in UPPERCASE ${uiLang}.
 - "highlightedWords": 5-6 key vocabulary words worth learning at ${cefrLevel}, lowercase,
   exactly as they appear in the text. No names, pronouns or very common words.
 
@@ -621,7 +621,7 @@ Return JSON with this shape:
 Create a "write a story together" game for a CEFR ${cefrLevel} English learner interested in "${interestLabel}".
 Octo (a friendly octopus) writes the opening, then the learner and Octo take turns: the learner adds 1-3 sentences, Octo continues. 3 learner turns in total.
 - "genre": one of mystery, adventure, funny, sci-fi, friendship, fantasy — pick one that fits "${interestLabel}" and is fun.
-- "title": a catchy story title in ${uiLang} (max 5 words).
+- "title": a catchy story title in English (max 5 words).
 - "opener": Octo's opening in English, 2-3 short sentences at ${cefrLevel} level. Introduce a named character (varied international names) and a situation, and end on a moment that invites the reader to say what happens next.
 - "prompts": exactly 3 short ideas in ${uiLang} (max 10 words each), one per learner turn, suggesting what could happen next, e.g. "Karakter kapıyı açınca ne görüyor?". They are optional hints, so keep them open.
 - "starters": exactly 3 lists (one per turn) of 2 English sentence beginnings (2-4 words) that fit the hint.
@@ -639,7 +639,7 @@ There are 5 rounds. In each round the learner writes ONE English sentence that u
   Mix nouns, verbs, adjectives and time/frequency words so a natural sentence is easy to imagine.
   Round 1 is the easiest; later rounds get slightly harder. Lowercase, base form, no names.
 - "starters": 2 short English sentence beginnings (2-4 words, first letter capitalized, "I" always uppercase) that would help build the sentence.
-- "title": a short fun name for this set, in ${uiLang} (max 4 words).
+- "title": a short fun name for this set, in English (max 4 words).
 ${avoid}
 Return JSON: { "title": string, "rounds": [{ "words": [string, string, string], "starters": [string, string] }] }`
         : `
@@ -647,7 +647,7 @@ Create a short role-play text chat for a CEFR ${cefrLevel} English learner inter
 The learner chats with a friendly character in a realistic everyday situation related to "${interestLabel}"
 (e.g. ordering at a café, checking into a hotel, chatting with a new colleague). Pick something concrete and fun.
 - "character": the character's first name and role in English, e.g. "Leo, the barista". Use varied international names.
-- "title": short situation name in ${uiLang} (max 5 words).
+- "title": short situation name in English (max 5 words).
 - "setting": one short sentence in ${uiLang} describing where the learner is.
 - "goal": one short sentence in ${uiLang} telling the learner what to achieve in the chat.
 - "opener": the character's first message in English, ${cefrLevel}-appropriate, max 20 words, ends with a question.

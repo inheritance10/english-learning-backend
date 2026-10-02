@@ -1,75 +1,90 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { UserProgressEntity } from '../../../domain/entities/user-progress.entity';
-import { DailyStreakEntity } from '../../../domain/entities/daily-streak.entity';
+import { InjectDataSource } from '@nestjs/typeorm';
+import { DataSource } from 'typeorm';
 import { UserEntity } from '../../../domain/entities/user.entity';
+
+const DAY_MS = 86_400_000;
+const toDay = (d: Date) => d.toISOString().split('T')[0];
 
 @Injectable()
 export class GetProgressUseCase {
-  constructor(
-    @InjectRepository(UserProgressEntity)
-    private readonly progressRepo: Repository<UserProgressEntity>,
-    @InjectRepository(DailyStreakEntity)
-    private readonly streakRepo: Repository<DailyStreakEntity>,
-  ) {}
+  constructor(@InjectDataSource() private readonly db: DataSource) {}
 
   async execute(user: UserEntity) {
-    // Last 30 days progress
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const userId = user.id;
 
-    const dailyProgress = await this.progressRepo
-      .createQueryBuilder('progress')
-      .where('progress.userId = :userId', { userId: user.id })
-      .andWhere('progress.date >= :from', { from: thirtyDaysAgo.toISOString().split('T')[0] })
-      .orderBy('progress.date', 'DESC')
-      .getMany();
+    const [dateRows, summaryRows] = await Promise.all([
+      // Every day the user completed something: reading, writing or a quiz
+      this.db.query(
+        `SELECT DISTINCT d FROM (
+           SELECT to_char(completed_at, 'YYYY-MM-DD') AS d FROM reading_activities WHERE user_id = $1 AND is_completed
+           UNION
+           SELECT to_char(completed_at, 'YYYY-MM-DD') FROM writing_activities WHERE user_id = $1 AND is_completed
+           UNION
+           SELECT date FROM user_progress WHERE "userId" = $1
+         ) t WHERE d IS NOT NULL ORDER BY d`,
+        [userId],
+      ),
+      this.db.query(
+        `SELECT
+           COALESCE((SELECT SUM(score) FROM reading_activities WHERE user_id = $1 AND is_completed), 0)
+           + COALESCE((SELECT SUM("correctAnswers") FROM user_progress WHERE "userId" = $1), 0) AS "totalCorrect",
+           COALESCE((SELECT SUM(jsonb_array_length(questions::jsonb)) FROM reading_activities WHERE user_id = $1 AND is_completed), 0)
+           + COALESCE((SELECT SUM("questionsAnswered") FROM user_progress WHERE "userId" = $1), 0) AS "totalAnswered",
+           COALESCE((SELECT SUM(tokens_earned) FROM reading_activities WHERE user_id = $1 AND is_completed), 0)
+           + COALESCE((SELECT SUM(tokens_earned) FROM writing_activities WHERE user_id = $1 AND is_completed), 0)
+           + COALESCE((SELECT SUM("tokensEarned") FROM user_progress WHERE "userId" = $1), 0) AS "totalTokens"`,
+        [userId],
+      ),
+    ]);
 
-    // Streak data
-    const streakData = await this.streakRepo.findOne({ where: { userId: user.id } });
+    const activeDays = new Set<string>(dateRows.map((r: { d: string }) => r.d));
+    const { currentStreak, longestStreak } = this.computeStreaks(activeDays);
 
-    // Summary stats — aggregate across all records (multiple per day are allowed)
-    const totalQuestions = dailyProgress.reduce((sum, p) => sum + p.questionsAnswered, 0);
-    const totalCorrect  = dailyProgress.reduce((sum, p) => sum + p.correctAnswers, 0);
-    const accuracy = totalQuestions > 0 ? Math.round((totalCorrect / totalQuestions) * 100) : 0;
+    const s = summaryRows[0];
+    const totalAnswered = Number(s.totalAnswered);
+    const totalCorrect = Number(s.totalCorrect);
 
-    // Unique active days (multiple quiz records on same day = 1 active day)
-    const uniqueDates = new Set(dailyProgress.map(p => p.date));
-
-    // Weekly activity for chart (last 7 days) — aggregate per day
-    const weeklyActivity = this.buildWeeklyActivity(dailyProgress);
+    const today = Date.now();
+    const weeklyActivity = Array.from({ length: 7 }, (_, i) => {
+      const date = toDay(new Date(today - (6 - i) * DAY_MS));
+      return { date, xpEarned: 0, questionsAnswered: 0, active: activeDays.has(date) };
+    });
 
     return {
       summary: {
-        totalXp: 0,  // XP removed — kept field for API compatibility
-        accuracy,
-        currentStreak: streakData?.currentStreak ?? 0,
-        longestStreak: streakData?.longestStreak ?? 0,
-        totalDaysActive: uniqueDates.size,
-        totalQuestionsAnswered: totalQuestions,
+        totalXp: 0,
+        accuracy: totalAnswered > 0 ? Math.round((totalCorrect / totalAnswered) * 100) : 0,
+        currentStreak,
+        longestStreak,
+        totalDaysActive: activeDays.size,
+        totalQuestionsAnswered: totalAnswered,
+        totalTokens: Number(s.totalTokens),
       },
       weeklyActivity,
-      dailyProgress: dailyProgress.slice(0, 7),
     };
   }
 
-  private buildWeeklyActivity(records: UserProgressEntity[]) {
-    const days = Array.from({ length: 7 }, (_, i) => {
-      const d = new Date();
-      d.setDate(d.getDate() - (6 - i));
-      return d.toISOString().split('T')[0];
-    });
+  private computeStreaks(days: Set<string>) {
+    const sorted = [...days].sort();
+    let longest = 0;
+    let run = 0;
+    let prev: number | null = null;
+    for (const d of sorted) {
+      const t = Date.parse(d);
+      run = prev !== null && t - prev === DAY_MS ? run + 1 : 1;
+      longest = Math.max(longest, run);
+      prev = t;
+    }
 
-    return days.map(date => {
-      // Aggregate all records for this day (may be multiple quizzes)
-      const dayRecords = records.filter(r => r.date === date);
-      return {
-        date,
-        xpEarned: 0,
-        questionsAnswered: dayRecords.reduce((sum, r) => sum + r.questionsAnswered, 0),
-        active: dayRecords.length > 0,
-      };
-    });
+    // Streak is still alive if the user was active today or yesterday
+    const now = Date.now();
+    let cursor = days.has(toDay(new Date(now))) ? now : now - DAY_MS;
+    let current = 0;
+    while (days.has(toDay(new Date(cursor)))) {
+      current += 1;
+      cursor -= DAY_MS;
+    }
+    return { currentStreak: current, longestStreak: longest };
   }
 }

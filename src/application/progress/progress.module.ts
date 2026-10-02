@@ -10,6 +10,7 @@ import { GetProgressUseCase } from './use-cases/get-progress.use-case';
 import { UpdateStreakUseCase } from './use-cases/update-streak.use-case';
 import { GetActivityStatsUseCase } from './use-cases/get-activity-stats.use-case';
 import { GetActivityHistoryUseCase } from './use-cases/get-activity-history.use-case';
+import { GetJourneyUseCase } from './use-cases/get-journey.use-case';
 import { ProgressController } from '../../presentation/controllers/progress.controller';
 import { AuthModule } from '../auth/auth.module';
 
@@ -26,7 +27,7 @@ import { AuthModule } from '../auth/auth.module';
     AuthModule,
   ],
   controllers: [ProgressController],
-  providers: [GetProgressUseCase, UpdateStreakUseCase, GetActivityStatsUseCase, GetActivityHistoryUseCase],
+  providers: [GetProgressUseCase, UpdateStreakUseCase, GetActivityStatsUseCase, GetActivityHistoryUseCase, GetJourneyUseCase],
   exports: [GetProgressUseCase, UpdateStreakUseCase, GetActivityStatsUseCase, GetActivityHistoryUseCase],
 })
 export class ProgressModule {}

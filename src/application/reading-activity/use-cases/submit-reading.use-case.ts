@@ -9,6 +9,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { UserEntity } from '../../../domain/entities/user.entity';
 import { ReadingActivityEntity } from '../../../domain/entities/reading-activity.entity';
+import { UpdateStreakUseCase } from '../../progress/use-cases/update-streak.use-case';
 
 export interface SubmitReadingInput {
   /** answers[i] = chosen option index for questions[i]; -1 = not answered */
@@ -42,6 +43,7 @@ export class SubmitReadingUseCase {
     private readonly repo: Repository<ReadingActivityEntity>,
     @InjectRepository(UserEntity)
     private readonly userRepo: Repository<UserEntity>,
+    private readonly updateStreak: UpdateStreakUseCase,
   ) {}
 
   async execute(
@@ -97,6 +99,9 @@ export class SubmitReadingUseCase {
         this.logger.warn(`Failed to award tokens for user ${user.id}: ${err?.message}`);
       }
     }
+
+    // Update streak (non-blocking)
+    this.updateStreak.recordActivity(user.id).catch(() => undefined);
 
     return {
       activityId: activity.id,

@@ -10,12 +10,14 @@ import { ReadingActivityController } from '../../presentation/controllers/readin
 import { GeminiService } from '../../infrastructure/gemini/gemini.service';
 import { AuthModule } from '../auth/auth.module';
 import { SubscriptionModule } from '../subscription/subscription.module';
+import { ProgressModule } from '../progress/progress.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([ReadingActivityEntity, ReadingPassageEntity, UserEntity]),
     AuthModule,
     SubscriptionModule,
+    ProgressModule,
   ],
   controllers: [ReadingActivityController],
   providers: [GenerateReadingUseCase, SubmitReadingUseCase, GetReadingQuotaUseCase, GeminiService],

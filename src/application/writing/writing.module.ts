@@ -6,6 +6,7 @@ import { UserEntity } from '../../domain/entities/user.entity';
 import { GeminiService } from '../../infrastructure/gemini/gemini.service';
 import { AuthModule } from '../auth/auth.module';
 import { SubscriptionModule } from '../subscription/subscription.module';
+import { ProgressModule } from '../progress/progress.module';
 import { StartWritingUseCase } from './use-cases/start-writing.use-case';
 import { SubmitWritingTurnUseCase } from './use-cases/submit-writing-turn.use-case';
 import { GetWritingQuotaUseCase } from './use-cases/get-writing-quota.use-case';
@@ -16,6 +17,7 @@ import { WritingController } from '../../presentation/controllers/writing.contro
     TypeOrmModule.forFeature([WritingActivityEntity, WritingTaskEntity, UserEntity]),
     AuthModule,
     SubscriptionModule,
+    ProgressModule,
   ],
   controllers: [WritingController],
   providers: [GeminiService, StartWritingUseCase, SubmitWritingTurnUseCase, GetWritingQuotaUseCase],

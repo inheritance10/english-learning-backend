@@ -16,7 +16,8 @@
     "migration:generate": "typeorm migration:generate",
     "migration:run": "typeorm migration:run",
     "seed": "ts-node src/infrastructure/database/seeds/seed.ts",
-    "seed:cefrj": "ts-node -r tsconfig-paths/register src/infrastructure/database/seeds/seed-cefrj.ts",
+    "seed:topics": "ts-node -r tsconfig-paths/register src/infrastructure/database/seeds/seed-topics.ts",
+    "seed:topics:prod": "node dist/infrastructure/database/seeds/seed-topics.js",
     "seed:prod": "node dist/infrastructure/database/seeds/seed.js",
     "seed:oxford": "ts-node -r tsconfig-paths/register src/infrastructure/database/seeds/seed-oxford.ts",
     "seed:translations": "ts-node -r tsconfig-paths/register src/infrastructure/database/seeds/seed-translations.ts"

@@ -8,6 +8,7 @@ import { GetProgressUseCase } from '../../application/progress/use-cases/get-pro
 import { UpdateStreakUseCase, RecordProgressDto } from '../../application/progress/use-cases/update-streak.use-case';
 import { GetActivityStatsUseCase } from '../../application/progress/use-cases/get-activity-stats.use-case';
 import { GetActivityHistoryUseCase, ActivityType } from '../../application/progress/use-cases/get-activity-history.use-case';
+import { GetJourneyUseCase } from '../../application/progress/use-cases/get-journey.use-case';
 
 class RecordProgressDtoInput {
   @IsString()
@@ -33,6 +34,7 @@ export class ProgressController {
     private readonly updateStreak: UpdateStreakUseCase,
     private readonly getActivityStats: GetActivityStatsUseCase,
     private readonly getActivityHistory: GetActivityHistoryUseCase,
+    private readonly getJourney: GetJourneyUseCase,
   ) {}
 
   @Get()
@@ -63,6 +65,12 @@ export class ProgressController {
   @ApiOperation({ summary: 'Get reading & writing activity stats overview' })
   async getStats(@CurrentUser() user: UserEntity) {
     return this.getActivityStats.execute(user);
+  }
+
+  @Get('journey')
+  @ApiOperation({ summary: 'Learning journey charts: words learned over time, weekly tokens, level progress' })
+  async journey(@CurrentUser() user: UserEntity) {
+    return this.getJourney.execute(user);
   }
 
   @Get('activity-history')

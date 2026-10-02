@@ -6,6 +6,7 @@ import { CurrentUser } from '../decorators/current-user.decorator';
 import { UserEntity } from '../../domain/entities/user.entity';
 import { VerifyReceiptUseCase } from '../../application/subscription/use-cases/verify-receipt.use-case';
 import { CheckTrialUseCase } from '../../application/subscription/use-cases/check-trial.use-case';
+import { MockCheckoutUseCase } from '../../application/subscription/use-cases/mock-checkout.use-case';
 
 class VerifyReceiptDto {
   @IsIn(['ios', 'android'])
@@ -18,6 +19,11 @@ class VerifyReceiptDto {
   productId: string;
 }
 
+class MockCheckoutDto {
+  @IsIn(['pro_monthly', 'pro_yearly'])
+  planId: 'pro_monthly' | 'pro_yearly';
+}
+
 @ApiTags('subscription')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
@@ -26,12 +32,19 @@ export class SubscriptionController {
   constructor(
     private readonly verifyReceipt: VerifyReceiptUseCase,
     private readonly checkTrial: CheckTrialUseCase,
+    private readonly mockCheckout: MockCheckoutUseCase,
   ) {}
 
   @Post('verify')
   @ApiOperation({ summary: 'Verify Apple/Google IAP receipt and activate subscription' })
   async verify(@Body() dto: VerifyReceiptDto, @CurrentUser() user: UserEntity) {
     return this.verifyReceipt.execute(dto, user);
+  }
+
+  @Post('mock-checkout')
+  @ApiOperation({ summary: 'TEMPORARY: activate Pro without payment (disable with MOCK_CHECKOUT_ENABLED=false)' })
+  async checkout(@Body() dto: MockCheckoutDto, @CurrentUser() user: UserEntity) {
+    return this.mockCheckout.execute(dto.planId, user);
   }
 
   @Get('status')
