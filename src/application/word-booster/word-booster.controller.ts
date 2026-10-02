@@ -139,13 +139,13 @@ export class WordBoosterController {
   @ApiOperation({ summary: 'Get today\'s daily story (if generated)' })
   async getTodayStory(@CurrentUser() user: UserEntity) {
     const today = this.getToday();
-    const story = await this.storyRepo.findOne({
-      where: { userId: user.id, storyDate: today },
-    });
+    const [story, unknownWords] = await Promise.all([
+      this.storyRepo.findOne({ where: { userId: user.id, storyDate: today } }),
+      this.getTodayUnknownWords(user.id),
+    ]);
 
-    if (!story) {
-      // Return unknown words from today for preview
-      const unknownWords = await this.getTodayUnknownWords(user.id);
+    // New unknown words since the story was written → offer a fresh story instead
+    if (!story || this.hasNewWords(story.words, unknownWords)) {
       return { story: null, unknownWords };
     }
 
@@ -158,14 +158,14 @@ export class WordBoosterController {
   async generateStory(@CurrentUser() user: UserEntity) {
     const today = this.getToday();
 
-    // Check if already generated today
-    const existing = await this.storyRepo.findOne({
-      where: { userId: user.id, storyDate: today },
-    });
-    if (existing) return { story: existing };
+    const [existing, unknownWords] = await Promise.all([
+      this.storyRepo.findOne({ where: { userId: user.id, storyDate: today } }),
+      this.getTodayUnknownWords(user.id),
+    ]);
+    if (existing && !this.hasNewWords(existing.words, unknownWords)) {
+      return { story: existing };
+    }
 
-    // Get today's unknown words
-    const unknownWords = await this.getTodayUnknownWords(user.id);
     if (unknownWords.length === 0) {
       return { story: null, message: 'Bugün henüz bilmediğin kelime yok!' };
     }
@@ -180,9 +180,8 @@ export class WordBoosterController {
       userInterests: user.interests ?? [],
     });
 
-    const story = this.storyRepo.create({
-      userId: user.id,
-      storyDate: today,
+    // One story per user per day (unique index) — overwrite today's row when regenerating
+    const story = this.storyRepo.merge(existing ?? this.storyRepo.create({ userId: user.id, storyDate: today }), {
       title: generated.title,
       content: generated.content,
       words: unknownWords,
@@ -191,6 +190,11 @@ export class WordBoosterController {
 
     await this.storyRepo.save(story);
     return { story };
+  }
+
+  private hasNewWords(storyWords: string[], unknownWords: string[]): boolean {
+    const inStory = new Set(storyWords);
+    return unknownWords.some((w) => !inStory.has(w));
   }
 
   // ── PATCH /word-booster/profession ────────────────────────────────────────
