@@ -42,7 +42,6 @@ export class GenerateQuizUseCase {
         const pooled = await this.pool.serve({
           userId: user.id,
           topicId: dto.topicId,
-          topicName,
           cefrLevel,
           count,
           interests: user.interests ?? [],

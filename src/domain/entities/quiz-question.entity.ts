@@ -32,7 +32,8 @@ export class QuizQuestionEntity {
   @Column('text')
   questionText: string;
 
-  @Column({ type: 'simple-array' })
+  // simple-json, not simple-array: simple-array joins with commas and breaks options like "Yes, I do"
+  @Column({ type: 'simple-json' })
   options: string[];
 
   /** Doğru şık metni — geriye dönük uyumluluk için korundu. */

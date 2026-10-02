@@ -53,6 +53,77 @@ export class GeminiService {
     return this.apiKeyConfigured;
   }
 
+  /**
+   * Questions for the shared pool: bilingual explanations so any user can be served,
+   * validated, and throws on failure (never returns mock data that would end up stored).
+   */
+  async generatePoolQuestions(params: {
+    topic: string;
+    example?: string;
+    cefrLevel: string;
+    count: number;
+    avoid?: string[];
+    interests?: string[];
+  }): Promise<PoolQuestion[]> {
+    const { topic, example, cefrLevel, count, avoid = [], interests = [] } = params;
+    if (!this.apiKeyConfigured) throw new Error('Gemini API key not configured');
+
+    const prompt = `
+You are an experienced English teacher writing multiple-choice quiz questions.
+
+Topic: "${topic}"${example ? ` (e.g. "${example}")` : ''}
+CEFR level: ${cefrLevel} — vocabulary and sentences must suit this level.
+${interests.length ? `Where natural, use contexts related to: ${interests.join(', ')}.` : ''}
+
+Write exactly ${count} questions that test "${topic}".
+- Cover different sub-aspects of the topic (form, meaning, use, common mistakes).
+- Mix formats: fill-in-the-blank (use "___"), choose the correct sentence, error spotting, situational choice.
+- Fresh, realistic sentences from everyday life, work, travel, technology, food, sport. Varied international names.
+- Exactly 4 options, exactly ONE correct. Distractors must be plausible typical learner mistakes.
+- Spread the correct answer position across 0-3.
+- "explanationEn": one or two short sentences in English explaining why the answer is correct.
+- "explanationTr": the same explanation in natural Turkish (keep English examples in English).
+- "hint": a short English hint that does not give away the answer.
+- "grammarPoint": the specific sub-point tested, in English (max 6 words).
+${avoid.length ? `\nThese questions already exist — do NOT repeat or closely paraphrase them:\n${avoid.map((q) => `- ${q}`).join('\n')}\n` : ''}
+Return a JSON array:
+[{ "question": string, "options": [string, string, string, string], "correctIndex": number,
+   "explanationEn": string, "explanationTr": string, "hint": string, "grammarPoint": string }]`;
+
+    LoggerUtil.logGeminiRequest(this.logger, 'generatePoolQuestions', { topic, cefrLevel, count }, this.modelName);
+    try {
+      const result = await this.jsonModel.generateContent(prompt);
+      const parsed = parseLenientJson(result.response.text());
+      const str = (v: unknown) => String(v ?? '').trim();
+      const list: PoolQuestion[] = (Array.isArray(parsed) ? parsed : []).map((q: any) => ({
+        question: str(q.question),
+        options: Array.isArray(q.options) ? q.options.map(str) : [],
+        correctIndex: Number(q.correctIndex),
+        explanationEn: str(q.explanationEn),
+        explanationTr: str(q.explanationTr),
+        hint: str(q.hint),
+        grammarPoint: str(q.grammarPoint),
+      }));
+      const valid = list.filter(
+        (q) =>
+          q.question &&
+          q.options.length === 4 &&
+          q.options.every(Boolean) &&
+          new Set(q.options.map((o) => o.toLowerCase())).size === 4 &&
+          Number.isInteger(q.correctIndex) &&
+          q.correctIndex >= 0 &&
+          q.correctIndex < 4 &&
+          q.explanationEn &&
+          q.explanationTr,
+      );
+      if (valid.length === 0) throw new Error('No valid questions in Gemini response');
+      return valid;
+    } catch (err: any) {
+      LoggerUtil.logGeminiError(this.logger, 'generatePoolQuestions', err, { topic, cefrLevel, count });
+      throw err;
+    }
+  }
+
   async generateQuizQuestions(params: {
     topic: string;
     cefrLevel: string;
@@ -875,6 +946,27 @@ export interface QuizQuestion {
   explanation: string;
   hint: string;
   grammar_point: string;
+}
+
+/** Gemini occasionally appends text after a valid JSON document; keep the valid prefix. */
+function parseLenientJson(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch (err: any) {
+    const pos = Number(/after JSON at position (\d+)/.exec(err?.message ?? '')?.[1]);
+    if (!pos) throw err;
+    return JSON.parse(text.slice(0, pos));
+  }
+}
+
+export interface PoolQuestion {
+  question: string;
+  options: string[];
+  correctIndex: number;
+  explanationEn: string;
+  explanationTr: string;
+  hint: string;
+  grammarPoint: string;
 }
 
 export interface AnswerAnalysis {

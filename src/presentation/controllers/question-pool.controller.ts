@@ -2,31 +2,31 @@ import { Controller, Post, HttpCode, HttpStatus, ForbiddenException } from '@nes
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { QuestionPoolScheduler } from '../../application/question-pool/question-pool.scheduler';
 
-/**
- * Yalnızca geliştirme ortamında kullanılabilen soru havuzu yönetim endpoint'leri.
- * Production'da tüm istekler 403 döner.
- */
+/** Development-only triggers for the question pool crons. Production returns 403. */
 @ApiTags('dev / question-pool')
 @Controller('dev/question-pool')
 export class QuestionPoolController {
   constructor(private readonly scheduler: QuestionPoolScheduler) {}
 
-  @Post('refill')
+  @Post('baseline')
   @HttpCode(HttpStatus.ACCEPTED)
-  @ApiOperation({ summary: '[DEV ONLY] Soru havuzu cron\'unu manuel tetikle' })
-  async triggerRefill() {
+  @ApiOperation({ summary: '[DEV ONLY] Top every topic up to the base pool size' })
+  async baseline() {
+    this.assertDev();
+    return { queuedQuestions: await this.scheduler.ensureBaseline() };
+  }
+
+  @Post('demand')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @ApiOperation({ summary: '[DEV ONLY] Run the usage-based expansion now' })
+  async demand() {
+    this.assertDev();
+    return { queuedQuestions: await this.scheduler.expandByDemand() };
+  }
+
+  private assertDev() {
     if (process.env.NODE_ENV === 'production') {
-      throw new ForbiddenException('Bu endpoint yalnızca development ortamında kullanılabilir.');
+      throw new ForbiddenException('Only available in development.');
     }
-
-    // Cron'u doğrudan çağır — await etmiyoruz; uzun sürebilir
-    this.scheduler.refillPool().catch(() => {
-      // hata loglanıyor, response'u bloklamıyoruz
-    });
-
-    return {
-      message: 'Refill job kuyruğa ekleniyor… Logları takip edin.',
-      hint: 'docker compose logs -f backend',
-    };
   }
 }

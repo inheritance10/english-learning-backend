@@ -11,6 +11,7 @@ import { QuestionPoolProducer } from './question-pool.producer';
 import { QuestionPoolConsumer } from './question-pool.consumer';
 import { QuestionPoolScheduler } from './question-pool.scheduler';
 import { QuizPoolService } from './quiz-pool.service';
+import { QuestionPoolStore } from './question-pool.store';
 import { QuestionPoolController } from '../../presentation/controllers/question-pool.controller';
 
 @Module({
@@ -30,6 +31,7 @@ import { QuestionPoolController } from '../../presentation/controllers/question-
     QuestionPoolConsumer,
     QuestionPoolScheduler,
     QuizPoolService,
+    QuestionPoolStore,
   ],
   exports: [QuizPoolService, QuestionPoolScheduler],
 })
