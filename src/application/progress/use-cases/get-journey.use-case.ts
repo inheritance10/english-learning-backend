@@ -15,6 +15,13 @@ export interface JourneyResult {
   weeklyTokens: Array<{ week: string; reading: number; writing: number; quiz: number }>;
   activityBreakdown: { reading: number; writing: number; quiz: number };
   levels: Array<{ level: string; learned: number; total: number }>;
+  quizLevels: Array<{
+    level: string;
+    topicsPracticed: number;
+    topicsTotal: number;
+    questions: number;
+    correct: number;
+  }>;
 }
 
 const TIMELINE_DAYS = 30;
@@ -28,7 +35,7 @@ export class GetJourneyUseCase {
   async execute(user: UserEntity): Promise<JourneyResult> {
     const id = user.id;
 
-    const [timeline, weekly, counts, levels, wordTotals] = await Promise.all([
+    const [timeline, weekly, counts, levels, wordTotals, quizLevels] = await Promise.all([
       // "learned" date ≈ last swipe/review; good enough to show the trend
       this.db.query(
         `SELECT to_char(d, 'YYYY-MM-DD') AS date,
@@ -80,6 +87,20 @@ export class GetJourneyUseCase {
         [id],
       ),
       this.db.query(`SELECT level, COUNT(DISTINCT word)::int AS total FROM words GROUP BY level ORDER BY level`),
+      // Every active topic level, with what the user has practised in it
+      this.db.query(
+        `SELECT t."cefrLevel" AS level,
+                COUNT(DISTINCT t.id)::int AS "topicsTotal",
+                COUNT(DISTINCT p."topicId")::int AS "topicsPracticed",
+                COALESCE(SUM(p."questionsAnswered"), 0)::int AS questions,
+                COALESCE(SUM(p."correctAnswers"), 0)::int AS correct
+           FROM topics t
+           LEFT JOIN user_progress p ON p."topicId" = t.id AND p."userId" = $1 AND p."questionsAnswered" > 0
+          WHERE t."isActive" AND t."cefrLevel" IS NOT NULL
+          GROUP BY t."cefrLevel"
+          ORDER BY t."cefrLevel"`,
+        [id],
+      ),
     ]);
 
     const c = counts[0];
@@ -97,6 +118,7 @@ export class GetJourneyUseCase {
       weeklyTokens: weekly,
       activityBreakdown: { reading: c.reading, writing: c.writing, quiz: c.quiz },
       levels: wordTotals.map((l: any) => ({ level: l.level, learned: learnedByLevel.get(l.level) ?? 0, total: l.total })),
+      quizLevels,
     };
   }
 }
