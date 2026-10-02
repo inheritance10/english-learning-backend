@@ -1,24 +1,23 @@
 import { IsString, IsOptional, MinLength, MaxLength, IsIn } from 'class-validator';
-import type { WritingActivityType } from '../../domain/entities/writing-activity.entity';
+import type { WritingMode } from '../../domain/entities/writing-task.entity';
 
-const ACTIVITY_TYPES: WritingActivityType[] = ['mail', 'picture', 'social', 'chat', 'journal', 'whatif'];
+const AVAILABLE_MODES: WritingMode[] = ['build', 'chat', 'story'];
 
-export class GenerateWritingDto {
+export class StartWritingDto {
+  @IsIn(AVAILABLE_MODES)
+  mode: WritingMode;
+
   @IsString()
   interest: string;
 
   @IsOptional()
-  @IsString()
+  @IsIn(['A1', 'A2', 'B1', 'B2', 'C1', 'C2'])
   cefrLevel?: string;
-
-  @IsOptional()
-  @IsIn(ACTIVITY_TYPES)
-  activityType?: WritingActivityType;
 }
 
-export class SubmitWritingDto {
+export class SubmitWritingTurnDto {
   @IsString()
-  @MinLength(10, { message: 'Cevabın çok kısa. En az 10 karakter yazmalısın.' })
-  @MaxLength(2000, { message: 'Cevabın çok uzun (max 2000 karakter).' })
-  userText: string;
+  @MinLength(2)
+  @MaxLength(400)
+  text: string;
 }

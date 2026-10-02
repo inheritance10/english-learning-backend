@@ -38,7 +38,7 @@ async function bootstrap() {
 
   // Swagger
   const config = new DocumentBuilder()
-    .setTitle('LangLearn API')
+    .setTitle('Learn With Octo API')
     .setDescription('AI-powered language learning app API')
     .setVersion('1.0')
     .addBearerAuth()

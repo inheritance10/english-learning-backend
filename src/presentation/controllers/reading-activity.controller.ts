@@ -17,6 +17,7 @@ import { UserEntity } from '../../domain/entities/user.entity';
 import { ReadingActivityEntity } from '../../domain/entities/reading-activity.entity';
 import { GenerateReadingUseCase } from '../../application/reading-activity/use-cases/generate-reading.use-case';
 import { SubmitReadingUseCase } from '../../application/reading-activity/use-cases/submit-reading.use-case';
+import { GetReadingQuotaUseCase } from '../../application/reading-activity/use-cases/get-reading-quota.use-case';
 import {
   GenerateReadingDto,
   SubmitReadingDto,
@@ -30,6 +31,7 @@ export class ReadingActivityController {
   constructor(
     private readonly generateReading: GenerateReadingUseCase,
     private readonly submitReading: SubmitReadingUseCase,
+    private readonly getQuota: GetReadingQuotaUseCase,
     @InjectRepository(ReadingActivityEntity)
     private readonly repo: Repository<ReadingActivityEntity>,
   ) {}
@@ -45,6 +47,13 @@ export class ReadingActivityController {
     @CurrentUser() user: UserEntity,
   ) {
     return this.generateReading.execute(dto, user);
+  }
+
+  // ── GET /reading-activity/quota ───────────────────────────────────────
+  @Get('quota')
+  @ApiOperation({ summary: "Today's reading allowance (free users get a daily limit)." })
+  async quota(@CurrentUser() user: UserEntity) {
+    return this.getQuota.execute(user);
   }
 
   // ── GET /reading-activity/:id ─────────────────────────────────────────

@@ -26,6 +26,9 @@ import { UserCompletedTopicEntity } from './domain/entities/user-completed-topic
 import { WordTranslationEntity } from './domain/entities/word-translation.entity';
 import { UserWordSrsEntity } from './domain/entities/user-word-srs.entity';
 import { StoryEntity } from './domain/entities/story.entity';
+import { ReadingPassageEntity } from './domain/entities/reading-passage.entity';
+import { WordDefinitionEntity } from './domain/entities/word-definition.entity';
+import { WritingTaskEntity } from './domain/entities/writing-task.entity';
 import { WordBoosterModule } from './application/word-booster/word-booster.module';
 import { ExamPrepModule } from './application/exam-prep/exam-prep.module';
 import { ExamEntity } from './domain/entities/exam.entity';
@@ -72,8 +75,11 @@ import { WritingModule } from './application/writing/writing.module';
             UserExamAttemptEntity,
             AiGeneratedVariantEntity,
             ReadingActivityEntity,
+            ReadingPassageEntity,
+            WordDefinitionEntity,
             UserSeenQuestionEntity,
             WritingActivityEntity,
+            WritingTaskEntity,
           ],
           synchronize: configService.get('NODE_ENV') !== 'production' || configService.get('FORCE_SYNC') === 'true',
           logging: configService.get('NODE_ENV') === 'development',

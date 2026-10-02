@@ -15,9 +15,10 @@ import { JwtAuthGuard } from '../guards/jwt-auth.guard';
 import { CurrentUser } from '../decorators/current-user.decorator';
 import { UserEntity } from '../../domain/entities/user.entity';
 import { WritingActivityEntity } from '../../domain/entities/writing-activity.entity';
-import { GenerateScenarioUseCase } from '../../application/writing/use-cases/generate-scenario.use-case';
-import { AnalyzeWritingUseCase } from '../../application/writing/use-cases/analyze-writing.use-case';
-import { GenerateWritingDto, SubmitWritingDto } from '../dtos/writing-activity.dto';
+import { StartWritingUseCase } from '../../application/writing/use-cases/start-writing.use-case';
+import { SubmitWritingTurnUseCase } from '../../application/writing/use-cases/submit-writing-turn.use-case';
+import { GetWritingQuotaUseCase } from '../../application/writing/use-cases/get-writing-quota.use-case';
+import { StartWritingDto, SubmitWritingTurnDto } from '../dtos/writing-activity.dto';
 
 @ApiTags('writing-activity')
 @ApiBearerAuth()
@@ -25,46 +26,41 @@ import { GenerateWritingDto, SubmitWritingDto } from '../dtos/writing-activity.d
 @Controller('writing-activity')
 export class WritingController {
   constructor(
-    private readonly generateScenario: GenerateScenarioUseCase,
-    private readonly analyzeWriting: AnalyzeWritingUseCase,
+    private readonly startWriting: StartWritingUseCase,
+    private readonly submitTurn: SubmitWritingTurnUseCase,
+    private readonly getQuota: GetWritingQuotaUseCase,
     @InjectRepository(WritingActivityEntity)
     private readonly repo: Repository<WritingActivityEntity>,
   ) {}
 
-  // ── POST /writing-activity/generate ──────────────────────────────────────
-  @Post('generate')
-  @ApiOperation({ summary: 'Generate a new writing scenario (inbox email + checklist).' })
-  async generate(
-    @Body() dto: GenerateWritingDto,
-    @CurrentUser() user: UserEntity,
-  ): Promise<WritingActivityEntity> {
-    return this.generateScenario.execute(dto, user);
+  @Get('quota')
+  @ApiOperation({ summary: "Today's writing allowance (free users get a daily limit)." })
+  async quota(@CurrentUser() user: UserEntity) {
+    return this.getQuota.execute(user);
   }
 
-  // ── GET /writing-activity/:id ─────────────────────────────────────────────
+  @Post('start')
+  @ApiOperation({ summary: 'Start (or resume) a writing activity for the given mode and interest.' })
+  async start(@Body() dto: StartWritingDto, @CurrentUser() user: UserEntity) {
+    return this.startWriting.execute(dto, user);
+  }
+
   @Get(':id')
-  @ApiOperation({ summary: 'Fetch a previously generated writing activity.' })
-  async getOne(
-    @Param('id') id: string,
-    @CurrentUser() user: UserEntity,
-  ): Promise<WritingActivityEntity> {
+  @ApiOperation({ summary: 'Fetch a writing activity.' })
+  async getOne(@Param('id') id: string, @CurrentUser() user: UserEntity) {
     const activity = await this.repo.findOne({ where: { id } });
     if (!activity) throw new NotFoundException('Writing activity not found');
     if (activity.userId !== user.id) throw new ForbiddenException('Not your activity');
     return activity;
   }
 
-  // ── POST /writing-activity/:id/analyze ───────────────────────────────────
-  @Post(':id/analyze')
-  @ApiOperation({
-    summary:
-      "Submit user's written reply, get AI correction (original vs improved) and earn tokens.",
-  })
-  async analyze(
+  @Post(':id/turns')
+  @ApiOperation({ summary: "Submit the learner's next sentence or message and get feedback." })
+  async turn(
     @Param('id') id: string,
-    @Body() dto: SubmitWritingDto,
+    @Body() dto: SubmitWritingTurnDto,
     @CurrentUser() user: UserEntity,
-  ): Promise<WritingActivityEntity> {
-    return this.analyzeWriting.execute(id, dto, user);
+  ) {
+    return this.submitTurn.execute(id, dto.text.trim(), user);
   }
 }

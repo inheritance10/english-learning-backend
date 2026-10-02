@@ -23,6 +23,12 @@ export class WordEntity {
   @Column()
   level: string;
 
+  @Column({ nullable: true })
+  phonetic: string;
+
+  @Column({ name: 'is_enriched', default: false })
+  isEnriched: boolean;
+
   @CreateDateColumn()
   createdAt: Date;
 

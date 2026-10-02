@@ -44,6 +44,11 @@ export class ReadingActivityEntity {
   @Column({ name: 'user_id' })
   userId: string;
 
+  /** Source passage in the shared pool; null for legacy or mock activities. */
+  @Index()
+  @Column({ name: 'passage_id', type: 'uuid', nullable: true })
+  passageId: string | null;
+
   /** CEFR level the activity was generated for: A1..C2 */
   @Column({ name: 'cefr_level' })
   cefrLevel: string;

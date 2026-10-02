@@ -8,41 +8,31 @@ import {
   Index,
 } from 'typeorm';
 import { UserEntity } from './user.entity';
+import type { WritingMode, WritingTask } from './writing-task.entity';
 
-/**
- * All supported writing activity formats.
- * Stored as a varchar column with default 'mail' for backward compat.
- */
-export type WritingActivityType =
-  | 'mail'      // Reply to an email
-  | 'picture'   // Describe a scene / picture
-  | 'social'    // Write a tweet / Instagram caption
-  | 'chat'      // Complete a chat dialogue
-  | 'journal'   // Daily journaling prompt
-  | 'whatif';   // Creative "What if…?" scenario
-
-/** AI correction payload returned by Gemini and stored as JSONB. */
 export interface WritingCorrection {
-  /** The user's original text (trimmed). */
-  original: string;
-  /** Naturally rewritten / improved version by Octo. */
-  improved: string;
-  /** One-sentence native-speaker pro-tip about style/register. */
-  proTip: string;
-  /**
-   * Key phrases (sub-strings) that appear in `improved` and represent
-   * meaningful upgrades compared to the original.
-   * Used by the UI to render green highlights in the improved text.
-   */
-  highlightedPhrases: string[];
+  wrong: string;
+  right: string;
+  /** One short explanation in the learner's UI language. */
+  note: string;
 }
 
-/**
- * One writing activity session:
- * - Gemini generates a scenario + inbox mail to reply to.
- * - User writes a response; submits for AI correction.
- * - Correction is stored and displayed as "Your version vs Octo's suggestion".
- */
+export interface WritingTurn {
+  userText: string;
+  /** True when the text is correct and does what the task asked. */
+  ok: boolean;
+  corrected: string;
+  corrections: WritingCorrection[];
+  /** A more natural way to say it; omitted when the text is already natural. */
+  natural?: string;
+  /** Chat / story: the partner's next line. */
+  reply?: string;
+  /** Chat / story: suggested starters for the learner's next message. */
+  suggestions?: string[];
+  /** Story: a short idea (UI language) for what the learner could write next. */
+  idea?: string;
+}
+
 @Entity('writing_activities')
 @Index(['userId', 'createdAt'])
 export class WritingActivityEntity {
@@ -52,44 +42,51 @@ export class WritingActivityEntity {
   @Column({ name: 'user_id' })
   userId: string;
 
-  /** CEFR level this activity was generated for. */
+  @Index()
+  @Column({ name: 'task_id', type: 'uuid', nullable: true })
+  taskId: string | null;
+
   @Column({ name: 'cefr_level' })
   cefrLevel: string;
 
-  /** Broad interest e.g. 'business' | 'travel' | 'technology'. */
   @Column()
   interest: string;
 
-  /** Writing activity type. Default 'mail' for backward compatibility. */
-  @Column({ name: 'activity_type', default: 'mail' })
-  activityType: WritingActivityType;
+  @Column({ name: 'activity_type', default: 'build' })
+  mode: WritingMode;
 
-  /** Short description of the writing task shown to the user. */
+  /** Short title shown in lists and activity history. */
   @Column({ type: 'text' })
   scenario: string;
 
-  /** The "received email" body that the user must reply to. */
-  @Column({ name: 'received_mail', type: 'text' })
-  receivedMail: string;
+  @Column({ type: 'jsonb', nullable: true })
+  task: WritingTask | null;
 
-  /**
-   * 3 checklist items the user should address in their reply
-   * e.g. ["Confirm the time", "Ask for the location", "Thank the sender"]
-   */
-  @Column({ type: 'simple-array', name: 'key_points' })
-  keyPoints: string[];
+  @Column({ type: 'jsonb', default: () => "'[]'" })
+  turns: WritingTurn[];
 
-  /** Sentence-starter hint shown when user taps the Hint button. */
+  @Column({ name: 'total_turns', type: 'int', default: 0 })
+  totalTurns: number;
+
+  /** Number of turns marked ok. */
+  @Column({ type: 'int', default: 0 })
+  score: number;
+
+  // Columns from the retired email/journal activities, kept so older history rows survive.
+  @Column({ name: 'received_mail', type: 'text', nullable: true })
+  receivedMail: string | null;
+
+  @Column({ type: 'simple-array', name: 'key_points', nullable: true })
+  keyPoints: string[] | null;
+
   @Column({ name: 'initial_hint', type: 'text', nullable: true })
   initialHint: string | null;
 
-  /** The reply the user wrote (null until submitted). */
   @Column({ name: 'user_text', type: 'text', nullable: true })
   userText: string | null;
 
-  /** AI correction; null until user submits. */
-  @Column({ type: 'jsonb', name: 'ai_correction', nullable: true })
-  aiCorrection: WritingCorrection | null;
+  @Column({ name: 'ai_correction', type: 'jsonb', nullable: true })
+  aiCorrection: unknown;
 
   @Column({ name: 'is_completed', default: false })
   isCompleted: boolean;

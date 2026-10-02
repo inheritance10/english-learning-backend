@@ -61,19 +61,22 @@ export class WordBoosterConsumer extends WorkerHost {
       return;
     }
 
-    // 2. Fetch localized translation for user's language, fallback to 'en'
-    const userLanguage = user.language ?? 'en';
+    // 2. Fetch translation: try user's UI language → 'tr' (native) → 'en'
+    const userLanguage = user.language ?? 'tr';
     let translation = await this.translationRepo.findOne({
       where: { wordId, language: userLanguage },
     });
 
-    if (!translation && userLanguage !== 'en') {
+    if (!translation && userLanguage !== 'tr') {
+      translation = await this.translationRepo.findOne({
+        where: { wordId, language: 'tr' },
+      });
+    }
+
+    if (!translation) {
       translation = await this.translationRepo.findOne({
         where: { wordId, language: 'en' },
       });
-      if (translation) {
-        this.logger.debug(`User ${userId}: no '${userLanguage}' translation for "${word}", using 'en' fallback`);
-      }
     }
 
     const meaning = translation?.meaning ?? word;

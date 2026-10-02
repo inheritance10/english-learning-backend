@@ -16,6 +16,9 @@ export interface AuthResult {
   isNewUser: boolean;
 }
 
+// Raised from 7 to 30 days while the app is being tested; revisit before launch.
+const TRIAL_DAYS = 30;
+
 @Injectable()
 export class SocialAuthUseCase {
   constructor(
@@ -48,7 +51,7 @@ export class SocialAuthUseCase {
         avatarUrl: picture ?? null,
         language: dto.language ?? 'en',
         trialStartedAt: new Date(),
-        trialEndsAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+        trialEndsAt: new Date(Date.now() + TRIAL_DAYS * 24 * 60 * 60 * 1000),
       });
       user = await this.userRepo.save(user);
     }
