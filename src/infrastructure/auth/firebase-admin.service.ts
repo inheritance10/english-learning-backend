@@ -62,6 +62,16 @@ export class FirebaseAdminService implements OnModuleInit {
     return admin.auth().verifyIdToken(idToken);
   }
 
+  /** Removes the Firebase Auth user. Missing users (e.g. Google-token sign-ins) are not an error. */
+  async deleteUser(uid: string): Promise<void> {
+    if (admin.apps.length === 0 || !uid) return;
+    try {
+      await admin.auth().deleteUser(uid);
+    } catch (err: any) {
+      if (err?.code !== 'auth/user-not-found') throw err;
+    }
+  }
+
   private isGoogleIdToken(token: string): boolean {
     try {
       const parts = token.split('.');

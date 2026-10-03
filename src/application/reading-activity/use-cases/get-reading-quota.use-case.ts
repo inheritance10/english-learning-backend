@@ -4,6 +4,7 @@ import { MoreThanOrEqual, Repository } from 'typeorm';
 import { UserEntity } from '../../../domain/entities/user.entity';
 import { ReadingActivityEntity } from '../../../domain/entities/reading-activity.entity';
 import { CheckTrialUseCase } from '../../subscription/use-cases/check-trial.use-case';
+import { RewardPurchaseEntity } from '../../../domain/entities/reward-purchase.entity';
 
 export const FREE_DAILY_READING_LIMIT = 3;
 
@@ -21,6 +22,8 @@ export class GetReadingQuotaUseCase {
     @InjectRepository(ReadingActivityEntity)
     private readonly repo: Repository<ReadingActivityEntity>,
     private readonly checkTrial: CheckTrialUseCase,
+    @InjectRepository(RewardPurchaseEntity)
+    private readonly purchases: Repository<RewardPurchaseEntity>,
   ) {}
 
   async execute(user: UserEntity): Promise<ReadingQuota> {
@@ -34,12 +37,17 @@ export class GetReadingQuotaUseCase {
     const used = await this.repo.count({
       where: { userId: user.id, createdAt: MoreThanOrEqual(startOfDay) },
     });
+    // Extra activities bought with tokens today raise today's limit
+    const extras = await this.purchases.count({
+      where: { userId: user.id, reward: 'extra_reading', createdAt: MoreThanOrEqual(startOfDay) },
+    });
+    const limit = FREE_DAILY_READING_LIMIT + extras;
 
     return {
       unlimited: false,
-      limit: FREE_DAILY_READING_LIMIT,
+      limit,
       used,
-      remaining: Math.max(FREE_DAILY_READING_LIMIT - used, 0),
+      remaining: Math.max(limit - used, 0),
     };
   }
 }

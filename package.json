@@ -18,6 +18,7 @@
     "seed": "ts-node src/infrastructure/database/seeds/seed.ts",
     "seed:topics": "ts-node -r tsconfig-paths/register src/infrastructure/database/seeds/seed-topics.ts",
     "seed:topics:prod": "node dist/infrastructure/database/seeds/seed-topics.js",
+    "fix:tokens:prod": "node dist/infrastructure/database/seeds/fix-token-balances.js",
     "seed:prod": "node dist/infrastructure/database/seeds/seed.js",
     "seed:oxford": "ts-node -r tsconfig-paths/register src/infrastructure/database/seeds/seed-oxford.ts",
     "seed:translations": "ts-node -r tsconfig-paths/register src/infrastructure/database/seeds/seed-translations.ts"
@@ -47,6 +48,7 @@
     "firebase-admin": "^13.0.0",
     "helmet": "^8.0.0",
     "ioredis": "^5.10.1",
+    "nodemailer": "^6.10.1",
     "passport": "^0.7.0",
     "passport-firebase-jwt": "^1.2.1",
     "passport-jwt": "^4.0.1",
@@ -63,6 +65,7 @@
     "@types/bcryptjs": "^2.4.6",
     "@types/express": "^5.0.0",
     "@types/node": "^22.0.0",
+    "@types/nodemailer": "^6.4.24",
     "@types/passport-jwt": "^4.0.1",
     "@types/uuid": "^10.0.0",
     "ts-node": "^10.9.1",

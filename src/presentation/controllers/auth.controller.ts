@@ -1,8 +1,9 @@
-import { Controller, Post, Body, Get, UseGuards, Patch, ForbiddenException } from '@nestjs/common';
+import { Controller, Post, Body, Get, UseGuards, Patch, Delete, HttpCode, HttpStatus, ForbiddenException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { IsString, IsOptional, IsIn, IsEmail } from 'class-validator';
 import { JwtService } from '@nestjs/jwt';
 import { SocialAuthUseCase } from '../../application/auth/use-cases/social-auth.use-case';
+import { DeleteAccountUseCase } from '../../application/auth/use-cases/delete-account.use-case';
 import { JwtAuthGuard } from '../guards/jwt-auth.guard';
 import { CurrentUser } from '../decorators/current-user.decorator';
 import { Public } from '../decorators/public.decorator';
@@ -46,6 +47,7 @@ class UpdateProfileDto {
 export class AuthController {
   constructor(
     private readonly socialAuth: SocialAuthUseCase,
+    private readonly deleteAccount: DeleteAccountUseCase,
     private readonly jwtService: JwtService,
     @InjectRepository(UserEntity)
     private readonly userRepo: Repository<UserEntity>,
@@ -104,5 +106,14 @@ export class AuthController {
     Object.assign(user, dto);
     const updated = await this.userRepo.save(user);
     return { id: updated.id, cefrLevel: updated.cefrLevel, language: updated.language, interests: updated.interests };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete('me')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Permanently delete the account and all its data' })
+  async deleteMe(@CurrentUser() user: UserEntity): Promise<void> {
+    await this.deleteAccount.execute(user);
   }
 }

@@ -4,6 +4,7 @@ import { MoreThanOrEqual, Repository } from 'typeorm';
 import { UserEntity } from '../../../domain/entities/user.entity';
 import { WritingActivityEntity } from '../../../domain/entities/writing-activity.entity';
 import { CheckTrialUseCase } from '../../subscription/use-cases/check-trial.use-case';
+import { RewardPurchaseEntity } from '../../../domain/entities/reward-purchase.entity';
 
 export const FREE_DAILY_WRITING_LIMIT = 3;
 
@@ -21,6 +22,8 @@ export class GetWritingQuotaUseCase {
     @InjectRepository(WritingActivityEntity)
     private readonly repo: Repository<WritingActivityEntity>,
     private readonly checkTrial: CheckTrialUseCase,
+    @InjectRepository(RewardPurchaseEntity)
+    private readonly purchases: Repository<RewardPurchaseEntity>,
   ) {}
 
   async execute(user: UserEntity): Promise<WritingQuota> {
@@ -34,12 +37,17 @@ export class GetWritingQuotaUseCase {
     const used = await this.repo.count({
       where: { userId: user.id, createdAt: MoreThanOrEqual(startOfDay) },
     });
+    // Extra activities bought with tokens today raise today's limit
+    const extras = await this.purchases.count({
+      where: { userId: user.id, reward: 'extra_writing', createdAt: MoreThanOrEqual(startOfDay) },
+    });
+    const limit = FREE_DAILY_WRITING_LIMIT + extras;
 
     return {
       unlimited: false,
-      limit: FREE_DAILY_WRITING_LIMIT,
+      limit,
       used,
-      remaining: Math.max(FREE_DAILY_WRITING_LIMIT - used, 0),
+      remaining: Math.max(limit - used, 0),
     };
   }
 }

@@ -1,8 +1,8 @@
 /**
- * Replaces ALL topics with the curated A1–C2 grammar list (data/cefr-topics.ts).
- * - Old quiz questions are deleted (they belong to the old topics).
- * - Quiz history in user_progress is kept; only its topic link is cleared.
- * Run: npm run seed:topics   (uses DATABASE_URL if set, otherwise DB_* env vars)
+ * Syncs topics with data/cefr-topics.ts (matched by name + level):
+ * inserts missing topics and updates the fields of existing ones. Never deletes anything,
+ * so quiz questions and user history stay intact. Safe to run repeatedly.
+ * Run: npm run seed:topics:prod   (uses DATABASE_URL if set, otherwise DB_* env vars)
  */
 import 'reflect-metadata';
 import { DataSource } from 'typeorm';
@@ -27,31 +27,37 @@ const dataSource = new DataSource({
 
 async function run() {
   await dataSource.initialize();
+  let inserted = 0;
+  let updated = 0;
 
   await dataSource.transaction(async (tx) => {
-    const unlinked = await tx.query(
-      `UPDATE user_progress SET "topicId" = NULL WHERE "topicId" IS NOT NULL`,
-    );
-    const questions = await tx.query(`DELETE FROM quiz_questions`);
-    const topics = await tx.query(`DELETE FROM topics`);
-    console.log(
-      `Removed ${topics[1]} topics and ${questions[1]} questions; unlinked ${unlinked[1]} progress rows.`,
-    );
-
     for (const [i, t] of CEFR_TOPICS.entries()) {
-      await tx.query(
-        `INSERT INTO topics (name, "titleTr", description, category, language, "cefrLevel", "csvId",
-                             "orderIndex", "estimatedMinutes", icon, "isActive", "isPremium")
-         VALUES ($1, $2, $3, 'grammar', 'en', $4, $5, $6, $7, '📖', true, false)`,
-        [t.name, t.nameTr, t.example, t.level, t.csvIds.join(',') || null, i + 1, MINUTES[t.level]],
+      const values = [t.nameTr, t.example, 'grammar', t.csvIds.join(',') || null, i + 1, MINUTES[t.level], '📖'];
+      const [, count] = await tx.query(
+        `UPDATE topics SET "titleTr" = $3, description = $4, category = $5, "csvId" = $6,
+                "orderIndex" = $7, "estimatedMinutes" = $8, icon = $9
+          WHERE name = $1 AND "cefrLevel" = $2`,
+        [t.name, t.level, ...values],
       );
+      if (count) {
+        updated++;
+        continue;
+      }
+      await tx.query(
+        `INSERT INTO topics (name, "cefrLevel", "titleTr", description, category, "csvId", "orderIndex",
+                             "estimatedMinutes", icon, language, "isActive", "isPremium")
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'en', true, false)`,
+        [t.name, t.level, ...values],
+      );
+      inserted++;
     }
   });
 
   const counts = await dataSource.query(
-    `SELECT "cefrLevel", COUNT(*)::int AS n FROM topics GROUP BY 1 ORDER BY 1`,
+    `SELECT "cefrLevel" AS level, category, COUNT(*)::int AS n FROM topics WHERE "isActive" GROUP BY 1, 2 ORDER BY 1, 2`,
   );
-  console.log(`Inserted ${CEFR_TOPICS.length} topics:`, counts.map((c: any) => `${c.cefrLevel}=${c.n}`).join(' '));
+  console.log(`Topics synced: ${inserted} inserted, ${updated} updated.`);
+  console.table(counts);
   await dataSource.destroy();
 }
 

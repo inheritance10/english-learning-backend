@@ -34,6 +34,12 @@ export class CheckTrialUseCase {
       return { hasAccess: true, reason: 'trial', daysRemaining };
     }
 
+    // Full access bought with tokens
+    if (user.rewardAccessUntil && user.rewardAccessUntil > now) {
+      const hoursRemaining = Math.ceil((user.rewardAccessUntil.getTime() - now.getTime()) / 3600000);
+      return { hasAccess: true, reason: 'reward', daysRemaining: 1, hoursRemaining };
+    }
+
     // No access
     return { hasAccess: false, reason: 'no_subscription', daysRemaining: 0 };
   }

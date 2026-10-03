@@ -91,7 +91,7 @@ export class SubmitReadingUseCase {
         await this.userRepo
           .createQueryBuilder()
           .update(UserEntity)
-          .set({ totalTokens: () => `total_tokens + ${tokensEarned}` })
+          .set({ totalTokens: () => `"totalTokens" + ${tokensEarned}` })
           .where('id = :id', { id: user.id })
           .execute();
       } catch (err: any) {

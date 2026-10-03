@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { WritingActivityEntity } from '../../domain/entities/writing-activity.entity';
 import { WritingTaskEntity } from '../../domain/entities/writing-task.entity';
 import { UserEntity } from '../../domain/entities/user.entity';
+import { RewardPurchaseEntity } from '../../domain/entities/reward-purchase.entity';
 import { GeminiService } from '../../infrastructure/gemini/gemini.service';
 import { AuthModule } from '../auth/auth.module';
 import { SubscriptionModule } from '../subscription/subscription.module';
@@ -14,7 +15,7 @@ import { WritingController } from '../../presentation/controllers/writing.contro
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([WritingActivityEntity, WritingTaskEntity, UserEntity]),
+    TypeOrmModule.forFeature([WritingActivityEntity, WritingTaskEntity, UserEntity, RewardPurchaseEntity]),
     AuthModule,
     SubscriptionModule,
     ProgressModule,

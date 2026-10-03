@@ -69,6 +69,8 @@ export class SocialAuthUseCase {
         avatarUrl: user.avatarUrl,
         language: user.language,
         cefrLevel: user.cefrLevel,
+        interests: user.interests ?? [],
+        totalTokens: user.totalTokens,
         trialEndsAt: user.trialEndsAt,
         isSubscribed: user.isSubscribed,
         isTestUser: user.isTestUser,

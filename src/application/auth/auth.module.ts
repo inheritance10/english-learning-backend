@@ -6,6 +6,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { UserEntity } from '../../domain/entities/user.entity';
 import { AuthController } from '../../presentation/controllers/auth.controller';
 import { SocialAuthUseCase } from './use-cases/social-auth.use-case';
+import { DeleteAccountUseCase } from './use-cases/delete-account.use-case';
 import { FirebaseStrategy } from '../../infrastructure/auth/firebase.strategy';
 import { JwtStrategy } from '../../infrastructure/auth/jwt.strategy';
 import { FirebaseAdminService } from '../../infrastructure/auth/firebase-admin.service';
@@ -24,7 +25,7 @@ import { FirebaseAdminService } from '../../infrastructure/auth/firebase-admin.s
     }),
   ],
   controllers: [AuthController],
-  providers: [SocialAuthUseCase, FirebaseStrategy, JwtStrategy, FirebaseAdminService],
+  providers: [SocialAuthUseCase, DeleteAccountUseCase, FirebaseStrategy, JwtStrategy, FirebaseAdminService],
   exports: [JwtModule, PassportModule, FirebaseAdminService],
 })
 export class AuthModule {}

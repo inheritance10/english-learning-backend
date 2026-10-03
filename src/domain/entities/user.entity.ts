@@ -60,6 +60,10 @@ export class UserEntity {
   @Column({ nullable: true })
   trialEndsAt: Date;
 
+  /** Full access bought with tokens ("1 day Pro"); separate from trial and paid subscription. */
+  @Column({ type: 'timestamptz', nullable: true })
+  rewardAccessUntil: Date | null;
+
   @Column({ default: false })
   onboardingCompleted: boolean;
 

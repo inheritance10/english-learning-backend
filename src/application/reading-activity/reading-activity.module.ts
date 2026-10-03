@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { ReadingActivityEntity } from '../../domain/entities/reading-activity.entity';
 import { ReadingPassageEntity } from '../../domain/entities/reading-passage.entity';
 import { UserEntity } from '../../domain/entities/user.entity';
+import { RewardPurchaseEntity } from '../../domain/entities/reward-purchase.entity';
 import { GenerateReadingUseCase } from './use-cases/generate-reading.use-case';
 import { SubmitReadingUseCase } from './use-cases/submit-reading.use-case';
 import { GetReadingQuotaUseCase } from './use-cases/get-reading-quota.use-case';
@@ -14,7 +15,7 @@ import { ProgressModule } from '../progress/progress.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([ReadingActivityEntity, ReadingPassageEntity, UserEntity]),
+    TypeOrmModule.forFeature([ReadingActivityEntity, ReadingPassageEntity, UserEntity, RewardPurchaseEntity]),
     AuthModule,
     SubscriptionModule,
     ProgressModule,
