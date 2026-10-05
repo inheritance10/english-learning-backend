@@ -75,6 +75,12 @@ export class AdminController {
     return this.queries.recentApiErrors(Math.min(Number(limit) || 100, 500));
   }
 
+  @Get('question-pool')
+  @ApiOperation({ summary: 'Question pool per topic: ready vs. target' })
+  questionPool() {
+    return this.queries.questionPool();
+  }
+
   @Get('queues/failed')
   @ApiOperation({ summary: 'Failed jobs in a queue with BullMQ failure reasons' })
   queueFailed(@Query('queue') queue = 'question-pool', @Query('limit') limit = '50') {

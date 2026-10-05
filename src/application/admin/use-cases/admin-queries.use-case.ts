@@ -10,6 +10,9 @@ import { REDIS_CLIENT } from '../../../infrastructure/redis/redis.module';
 import { QUESTION_POOL_QUEUE } from '../../question-pool/question-pool.producer';
 import { WORD_BOOSTER_QUEUE } from '../../notifications/word-booster.producer';
 import { EXAM_PREP_QUEUE } from '../../exam-prep/exam-prep.producer';
+import { QuizQuestionEntity } from '../../../domain/entities/quiz-question.entity';
+import { TopicEntity } from '../../../domain/entities/topic.entity';
+import { BASE_POOL_SIZE } from '../../question-pool/question-pool.scheduler';
 
 const QUEUES = [QUESTION_POOL_QUEUE, WORD_BOOSTER_QUEUE, EXAM_PREP_QUEUE];
 
@@ -160,6 +163,46 @@ export class AdminQueriesUseCase {
         GROUP BY 1, 2 ORDER BY count DESC`,
       [hours],
     );
+  }
+
+  /** Question pool per topic: how many questions are ready vs. the target pool size. */
+  async questionPool() {
+    const rows = await this.db
+      .getRepository(QuizQuestionEntity)
+      .createQueryBuilder('q')
+      .innerJoin(TopicEntity, 't', 't.id = q.topicId')
+      .select('t.id', 'topicId')
+      .addSelect('t.name', 'topic')
+      .addSelect('t.isActive', 'isActive')
+      .addSelect('COUNT(q.id)', 'total')
+      .addSelect('COUNT(q.id) FILTER (WHERE q.poolReady = true)', 'ready')
+      .addSelect('COUNT(q.id) FILTER (WHERE q.isAiGenerated = true)', 'aiGenerated')
+      .addSelect('COALESCE(SUM(q.usageCount), 0)', 'used')
+      .addSelect('MAX(q.createdAt)', 'lastCreatedAt')
+      .groupBy('t.id')
+      .addGroupBy('t.name')
+      .addGroupBy('t.isActive')
+      .orderBy('ready', 'ASC')
+      .getRawMany<{ topicId: string; topic: string; isActive: boolean; total: string; ready: string; aiGenerated: string; used: string; lastCreatedAt: Date | null }>();
+
+    const topics = rows.map((r) => ({
+      topicId: r.topicId,
+      topic: r.topic,
+      isActive: r.isActive,
+      total: Number(r.total),
+      ready: Number(r.ready),
+      target: BASE_POOL_SIZE,
+      aiGenerated: Number(r.aiGenerated),
+      used: Number(r.used),
+      lastCreatedAt: r.lastCreatedAt,
+    }));
+
+    return {
+      targetPerTopic: BASE_POOL_SIZE,
+      totalReady: topics.reduce((n, t) => n + t.ready, 0),
+      lowTopics: topics.filter((t) => t.isActive && t.ready < BASE_POOL_SIZE).length,
+      topics,
+    };
   }
 
   /** Failed jobs still held by BullMQ (with the reason BullMQ stored). */
