@@ -700,7 +700,7 @@ Return JSON with this shape:
 
   /** Generates the prompt material for one writing activity (stored in the shared pool). */
   async generateWritingTask(params: {
-    mode: WritingMode;
+    mode: Exclude<WritingMode, 'scramble'>;
     cefrLevel: string;
     interestLabel: string;
     language: 'en' | 'tr';
@@ -713,27 +713,15 @@ Return JSON with this shape:
     const avoid = avoidTitles.length
       ? `\nAlready used — make something clearly different:\n${avoidTitles.map((t) => `- ${t}`).join('\n')}\n`
       : '';
-    const focusHow: Record<WritingMode, string> = {
+    const focusHow: Record<Exclude<WritingMode, 'scramble'>, string> = {
       build: 'Choose the words and starters so that each sentence naturally needs this structure.',
       chat: 'Choose the situation and write the opener so the learner naturally has to use this structure in every reply.',
       story: 'Choose the story, prompts and starters so the learner naturally uses this structure when continuing it.',
-      scramble: 'EVERY sentence must use this structure, in a variety of forms (affirmative, negative, question where it fits).',
       translate: '',
     };
     const focusBlock = focus
       ? `\nGRAMMAR FOCUS: the learner is practising "${focus.name}"${focus.example ? ` (e.g. "${focus.example}")` : ''}. ${focusHow[mode]}\n`
       : '';
-
-    const scramblePrompt = `
-Create a "word order" game for a CEFR ${cefrLevel} English learner interested in "${interestLabel}".
-There are 6 rounds. In each round the learner sees the words of ONE English sentence shuffled and puts them back in order.
-${focusBlock}- "sentence": a natural, correct English sentence at ${cefrLevel} level about "${interestLabel}". Round 1 is the shortest (4-5 words); later rounds get slightly longer (max ${cefrLevel.startsWith('A') ? 9 : 13} words).
-  There must be only ONE natural word order. No commas, quotation marks, dashes or brackets. End with ".", "?" or "!".
-  Do not start the sentence with a name or other proper noun.
-- "hint": the meaning of the sentence in ${uiLang}, natural and short.
-- "title": a short fun name for this set, in English (max 4 words).
-${avoid}
-Return JSON: { "title": string, "rounds": [{ "sentence": string, "hint": string }] }`;
 
     const storyPrompt = `
 Create a "write a story together" game for a CEFR ${cefrLevel} English learner interested in "${interestLabel}".
@@ -749,8 +737,6 @@ Return JSON: { "title": string, "genre": string, "opener": string, "prompts": [s
     const prompt =
       mode === 'story'
         ? storyPrompt
-        : mode === 'scramble'
-        ? scramblePrompt
         : mode === 'build'
         ? `
 Create a "sentence builder" writing game for a CEFR ${cefrLevel} English learner interested in "${interestLabel}".
@@ -781,14 +767,6 @@ Return JSON: { "title": string, "character": string, "setting": string, "goal": 
       const parsed = JSON.parse(result.response.text());
       const str = (v: any) => String(v ?? '').trim();
       const strList = (v: any) => (Array.isArray(v) ? v.map(str).filter(Boolean) : []);
-
-      if (mode === 'scramble') {
-        const rounds = (Array.isArray(parsed.rounds) ? parsed.rounds : [])
-          .map((r: any) => toScrambleRound(str(r.sentence), str(r.hint)))
-          .filter((r: ScrambleTask['rounds'][number] | null): r is ScrambleTask['rounds'][number] => !!r);
-        if (rounds.length < 5) throw new Error('Word order game failed validation');
-        return { title: str(parsed.title), task: { mode: 'scramble', rounds: rounds.slice(0, 6) } };
-      }
 
       if (mode === 'build') {
         const rounds = (Array.isArray(parsed.rounds) ? parsed.rounds : [])
@@ -826,6 +804,52 @@ Return JSON: { "title": string, "character": string, "setting": string, "goal": 
       return { title: task.title, task };
     } catch (err: any) {
       LoggerUtil.logGeminiError(this.logger, 'generateWritingTask', err, { mode, cefrLevel });
+      throw err;
+    }
+  }
+
+  /**
+   * Generates a batch of word order sentences for the shared pool. `avoid` lists sentences
+   * already in the pool so the new ones are different.
+   */
+  async generateScrambleSentences(params: {
+    cefrLevel: string;
+    interestLabel: string;
+    language: 'en' | 'tr';
+    focus?: WritingFocus;
+    count: number;
+    avoid?: string[];
+  }): Promise<Array<{ sentence: string; hint: string }>> {
+    const { cefrLevel, interestLabel, language, focus, count, avoid = [] } = params;
+    const uiLang = language === 'tr' ? 'Turkish' : 'English';
+    const maxWords = cefrLevel.startsWith('A') ? 9 : cefrLevel.startsWith('B') ? 12 : 14;
+    const focusBlock = focus
+      ? `GRAMMAR FOCUS: the learner is practising "${focus.name}"${focus.example ? ` (e.g. "${focus.example}")` : ''}. EVERY sentence must use this structure, in a variety of forms (affirmative, negative, question where it fits).\n`
+      : '';
+    const avoidBlock = avoid.length
+      ? `\nThese sentences already exist. Write NEW ones with different situations, verbs and vocabulary:\n${avoid.map((a) => `- ${a}`).join('\n')}\n`
+      : '';
+
+    const prompt = `
+Write ${count} English sentences for a "word order" game for a CEFR ${cefrLevel} English learner interested in "${interestLabel}".
+The learner sees the words of each sentence shuffled and puts them back in order.
+${focusBlock}- "sentence": natural, correct, ${cefrLevel}-appropriate vocabulary and grammar, about "${interestLabel}". Vary the length from 4 to ${maxWords} words.
+  There must be only ONE natural word order. No commas, quotation marks, dashes or brackets. End with ".", "?" or "!".
+  Do not start the sentence with a name or other proper noun. Every sentence must be about a different situation.
+- "hint": the meaning of the sentence in ${uiLang}, natural and short.
+${avoidBlock}
+Return JSON: { "sentences": [{ "sentence": string, "hint": string }] }`;
+
+    LoggerUtil.logGeminiRequest(this.logger, 'generateScrambleSentences', { cefrLevel, count }, this.modelName);
+    try {
+      const result = await this.track('generateScrambleSentences', () => this.jsonModel.generateContent(prompt));
+      const parsed = JSON.parse(result.response.text());
+      const str = (v: any) => String(v ?? '').trim();
+      return (Array.isArray(parsed.sentences) ? parsed.sentences : [])
+        .map((r: any) => ({ sentence: str(r.sentence), hint: str(r.hint) }))
+        .filter((r: { sentence: string; hint: string }) => r.sentence && r.hint);
+    } catch (err: any) {
+      LoggerUtil.logGeminiError(this.logger, 'generateScrambleSentences', err, { cefrLevel });
       throw err;
     }
   }
@@ -1038,16 +1062,4 @@ export interface LearningPathItem {
   reason: string;
   estimatedMinutes: number;
   difficulty: 'easy' | 'medium' | 'hard';
-}
-
-/**
- * Splits a word order sentence into tiles. The first word is lowercased (unless it is "I")
- * so its capital letter does not give the answer away.
- */
-function toScrambleRound(sentence: string, hint: string): ScrambleTask['rounds'][number] | null {
-  const end = sentence.match(/[.!?]+$/)?.[0] ?? '.';
-  const words = sentence.replace(/[.!?]+$/, '').split(/\s+/).filter(Boolean);
-  if (words.length < 3 || words.length > 15 || !hint) return null;
-  if (!/^I($|')/.test(words[0])) words[0] = words[0].toLowerCase();
-  return { sentence, hint, words, end };
 }

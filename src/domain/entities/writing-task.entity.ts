@@ -42,6 +42,8 @@ export interface StoryTask {
 export interface ScrambleTask {
   mode: 'scramble';
   rounds: Array<{
+    /** Row in scramble_sentences, used to avoid showing a learner the same sentence twice. */
+    id?: string;
     /** The sentence as written, e.g. "She has never been to Paris." */
     sentence: string;
     /** Its meaning in the learner's UI language. */

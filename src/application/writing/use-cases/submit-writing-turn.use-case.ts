@@ -16,13 +16,12 @@ import {
 } from '../../../domain/entities/writing-activity.entity';
 import type { ScrambleTask, WritingMode, WritingTask } from '../../../domain/entities/writing-task.entity';
 import { UpdateStreakUseCase } from '../../progress/use-cases/update-streak.use-case';
+import { normalizeOrder } from '../scramble-words';
 
 /** Tokens awarded per turn the learner gets right. */
 const TOKENS_PER_GOOD_TURN: Partial<Record<WritingMode, number>> = { scramble: 2 };
 const DEFAULT_TOKENS_PER_GOOD_TURN = 4;
 
-const normalizeOrder = (text: string) =>
-  text.toLowerCase().replace(/[.!?]+$/, '').replace(/\s+/g, ' ').trim();
 
 /** Word order game: the answer is right when the words are in the sentence's order. */
 function checkScramble(task: ScrambleTask, round: number, text: string): Omit<WritingTurn, 'userText'> {

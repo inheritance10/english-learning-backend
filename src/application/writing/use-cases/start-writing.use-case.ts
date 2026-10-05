@@ -19,6 +19,7 @@ import {
 } from '../../../domain/entities/writing-task.entity';
 import { interestLabel } from '../../../domain/constants/interests.constants';
 import { GetWritingQuotaUseCase } from './get-writing-quota.use-case';
+import { BuildScrambleTaskUseCase } from './build-scramble-task.use-case';
 
 export interface StartWritingInput {
   mode: WritingMode;
@@ -43,6 +44,7 @@ export class StartWritingUseCase {
   constructor(
     private readonly gemini: GeminiService,
     private readonly getQuota: GetWritingQuotaUseCase,
+    private readonly buildScramble: BuildScrambleTaskUseCase,
     @InjectRepository(WritingActivityEntity)
     private readonly repo: Repository<WritingActivityEntity>,
     @InjectRepository(WritingTaskEntity)
@@ -88,9 +90,26 @@ export class StartWritingUseCase {
     const focus: WritingFocus | null = topic
       ? { name: topic.name, example: topic.description || undefined }
       : null;
+    const topicName = topic ? (language === 'tr' && topic.titleTr) || topic.name : null;
+
+    // Word order sentences come from their own pool, picked one by one per learner
     const pooled =
-      (await this.findUndoneTask(user.id, mode, cefrLevel, interest, topicId, language)) ??
-      (await this.createTask(mode, cefrLevel, interest, topicId, focus, language));
+      mode === 'scramble'
+        ? {
+            id: null,
+            title: topicName ?? interestLabel(interest, language),
+            task: await this.buildScramble.execute({
+              userId: user.id,
+              cefrLevel,
+              interest,
+              interestLabel: interestLabel(interest, language),
+              topicId,
+              focus,
+              language,
+            }),
+          }
+        : (await this.findUndoneTask(user.id, mode, cefrLevel, interest, topicId, language)) ??
+          (await this.createTask(mode, cefrLevel, interest, topicId, focus, language));
 
     return this.repo.save(
       this.repo.create({
@@ -100,7 +119,7 @@ export class StartWritingUseCase {
         cefrLevel,
         interest,
         topicId,
-        topicName: topic ? (language === 'tr' && topic.titleTr) || topic.name : null,
+        topicName,
         scenario: pooled.title,
         task: pooled.task,
         turns: [],
@@ -139,7 +158,7 @@ export class StartWritingUseCase {
   }
 
   private async createTask(
-    mode: WritingMode,
+    mode: Exclude<WritingMode, 'scramble'>,
     cefrLevel: string,
     interest: string,
     topicId: string | null,

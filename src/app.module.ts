@@ -41,6 +41,7 @@ import { APP_FILTER } from '@nestjs/core';
 import { ObservabilityModule } from './infrastructure/observability/observability.module';
 import { AdminModule } from './application/admin/admin.module';
 import { WritingTaskEntity } from './domain/entities/writing-task.entity';
+import { ScrambleSentenceEntity } from './domain/entities/scramble-sentence.entity';
 import { WordBoosterModule } from './application/word-booster/word-booster.module';
 import { ExamPrepModule } from './application/exam-prep/exam-prep.module';
 import { ExamEntity } from './domain/entities/exam.entity';
@@ -98,6 +99,7 @@ import { WritingModule } from './application/writing/writing.module';
             UserSeenQuestionEntity,
             WritingActivityEntity,
             WritingTaskEntity,
+            ScrambleSentenceEntity,
           ],
           synchronize: configService.get('NODE_ENV') !== 'production' || configService.get('FORCE_SYNC') === 'true',
           logging: configService.get('NODE_ENV') === 'development',
