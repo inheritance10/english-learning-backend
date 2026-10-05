@@ -4,6 +4,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { UserEntity } from '../../domain/entities/user.entity';
 import { WordBoosterProducer } from './word-booster.producer';
+import { ObservabilityService } from '../../infrastructure/observability/observability.service';
 
 @Injectable()
 export class WordNotificationScheduler {
@@ -13,6 +14,7 @@ export class WordNotificationScheduler {
     @InjectRepository(UserEntity)
     private readonly userRepo: Repository<UserEntity>,
     private readonly producer: WordBoosterProducer,
+    private readonly obs: ObservabilityService,
   ) {}
 
   /**
@@ -30,6 +32,10 @@ export class WordNotificationScheduler {
     },
   )
   async scheduleDailyWordNotifications(): Promise<void> {
+    return this.obs.runCron('notifications.scheduleDaily', () => this.run_scheduleDailyWordNotifications());
+  }
+
+  private async run_scheduleDailyWordNotifications(): Promise<void> {
     this.logger.log('Word Booster daily scheduler triggered');
     await this.producer.scheduleAllUsers();
   }

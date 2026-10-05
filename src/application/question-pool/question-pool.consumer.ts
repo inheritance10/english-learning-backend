@@ -1,8 +1,9 @@
-import { Processor, WorkerHost } from '@nestjs/bullmq';
+import { OnWorkerEvent, Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Job } from 'bullmq';
+import { ObservabilityService } from '../../infrastructure/observability/observability.service';
 import { TopicEntity } from '../../domain/entities/topic.entity';
 import { QuestionPoolStore } from './question-pool.store';
 import { QUESTION_POOL_QUEUE, type FillTopicPoolJobData } from './question-pool.producer';
@@ -16,8 +17,19 @@ export class QuestionPoolConsumer extends WorkerHost {
     private readonly store: QuestionPoolStore,
     @InjectRepository(TopicEntity)
     private readonly topicRepo: Repository<TopicEntity>,
+    private readonly obs: ObservabilityService,
   ) {
     super();
+  }
+
+  @OnWorkerEvent('completed')
+  onCompleted(job: Job): void {
+    this.obs.recordQueueJob('question-pool', job, 'ok');
+  }
+
+  @OnWorkerEvent('failed')
+  onFailed(job: Job | undefined, err: Error): void {
+    if (job) this.obs.recordQueueJob('question-pool', job, 'failed', err);
   }
 
   async process(job: Job<FillTopicPoolJobData>): Promise<void> {

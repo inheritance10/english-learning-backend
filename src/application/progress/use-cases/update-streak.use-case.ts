@@ -5,6 +5,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { DailyStreakEntity } from '../../../domain/entities/daily-streak.entity';
 import { UserProgressEntity } from '../../../domain/entities/user-progress.entity';
 import { UserEntity } from '../../../domain/entities/user.entity';
+import { ObservabilityService } from '../../../infrastructure/observability/observability.service';
 
 export interface RecordProgressDto {
   topicId: string;
@@ -40,6 +41,7 @@ export class UpdateStreakUseCase {
     private readonly progressRepo: Repository<UserProgressEntity>,
     @InjectRepository(UserEntity)
     private readonly userRepo: Repository<UserEntity>,
+    private readonly obs: ObservabilityService,
   ) {}
 
   async recordActivity(userId: string): Promise<{ currentStreak: number; isNewDay: boolean }> {
@@ -152,6 +154,10 @@ export class UpdateStreakUseCase {
   /** Runs daily at midnight UTC — resets streaks for users who missed yesterday */
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
   async resetBrokenStreaks() {
+    return this.obs.runCron('progress.resetBrokenStreaks', () => this.run_resetBrokenStreaks());
+  }
+
+  private async run_resetBrokenStreaks() {
     const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
 
     await this.streakRepo

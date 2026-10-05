@@ -33,6 +33,10 @@ import { FeedbackEntity } from './domain/entities/feedback.entity';
 import { FeedbackModule } from './application/feedback/feedback.module';
 import { RewardsModule } from './application/rewards/rewards.module';
 import { RewardPurchaseEntity } from './domain/entities/reward-purchase.entity';
+import { AiUsageLogEntity } from './domain/entities/ai-usage-log.entity';
+import { JobRunEntity } from './domain/entities/job-run.entity';
+import { ObservabilityModule } from './infrastructure/observability/observability.module';
+import { AdminModule } from './application/admin/admin.module';
 import { WritingTaskEntity } from './domain/entities/writing-task.entity';
 import { WordBoosterModule } from './application/word-booster/word-booster.module';
 import { ExamPrepModule } from './application/exam-prep/exam-prep.module';
@@ -85,6 +89,8 @@ import { WritingModule } from './application/writing/writing.module';
             QuizAnswerExplanationEntity,
             FeedbackEntity,
             RewardPurchaseEntity,
+            AiUsageLogEntity,
+            JobRunEntity,
             UserSeenQuestionEntity,
             WritingActivityEntity,
             WritingTaskEntity,
@@ -126,6 +132,8 @@ import { WritingModule } from './application/writing/writing.module';
 
     // Redis (global — available to all modules)
     RedisModule,
+    ObservabilityModule,
+    AdminModule,
 
     AuthModule,
     TopicsModule,

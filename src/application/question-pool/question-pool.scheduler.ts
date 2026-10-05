@@ -3,6 +3,7 @@ import { Cron } from '@nestjs/schedule';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { QuestionPoolProducer, type FillTopicPoolJobData } from './question-pool.producer';
+import { ObservabilityService } from '../../infrastructure/observability/observability.service';
 
 /** Every active topic is kept at least this full (10 questions per quiz → ~6 quizzes before a repeat). */
 export const BASE_POOL_SIZE = 60;
@@ -20,11 +21,16 @@ export class QuestionPoolScheduler {
   constructor(
     private readonly producer: QuestionPoolProducer,
     @InjectDataSource() private readonly db: DataSource,
+    private readonly obs: ObservabilityService,
   ) {}
 
   /** Tops up topics below BASE_POOL_SIZE (new topics, or after a reset). */
   @Cron(isProd ? '0 3 * * *' : '*/10 * * * *', { timeZone: 'Europe/Istanbul' })
   async ensureBaseline(): Promise<number> {
+    return this.obs.runCron('question-pool.ensureBaseline', () => this.run_ensureBaseline());
+  }
+
+  private async run_ensureBaseline(): Promise<number> {
     const rows: { id: string; ready: number }[] = await this.db.query(
       `SELECT t.id, COUNT(q.id) FILTER (WHERE q.pool_ready)::int AS ready
          FROM topics t LEFT JOIN quiz_questions q ON q."topicId" = t.id
@@ -52,6 +58,10 @@ export class QuestionPoolScheduler {
    */
   @Cron('0 4 1,15 * *', { timeZone: 'Europe/Istanbul' })
   async expandByDemand(): Promise<number> {
+    return this.obs.runCron('question-pool.expandByDemand', () => this.run_expandByDemand());
+  }
+
+  private async run_expandByDemand(): Promise<number> {
     const usage: { topicId: string; views: number }[] = await this.db.query(
       `SELECT q."topicId" AS "topicId", COUNT(*)::int AS views
          FROM user_seen_questions s

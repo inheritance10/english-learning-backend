@@ -1,5 +1,6 @@
-import { Processor, WorkerHost } from '@nestjs/bullmq';
+import { OnWorkerEvent, Processor, WorkerHost } from '@nestjs/bullmq';
 import { Job } from 'bullmq';
+import { ObservabilityService } from '../../infrastructure/observability/observability.service';
 import { Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, IsNull } from 'typeorm';
@@ -20,8 +21,19 @@ export class ExamPrepConsumer extends WorkerHost {
     private readonly questionRepo: Repository<QuestionEntity>,
     @InjectRepository(AiGeneratedVariantEntity)
     private readonly variantRepo: Repository<AiGeneratedVariantEntity>,
+    private readonly obs: ObservabilityService,
   ) {
     super();
+  }
+
+  @OnWorkerEvent('completed')
+  onCompleted(job: Job): void {
+    this.obs.recordQueueJob('exam-prep', job, 'ok');
+  }
+
+  @OnWorkerEvent('failed')
+  onFailed(job: Job | undefined, err: Error): void {
+    if (job) this.obs.recordQueueJob('exam-prep', job, 'failed', err);
   }
 
   async process(job: Job): Promise<void> {

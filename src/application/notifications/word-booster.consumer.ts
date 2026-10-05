@@ -1,5 +1,6 @@
-import { Processor, WorkerHost } from '@nestjs/bullmq';
+import { OnWorkerEvent, Processor, WorkerHost } from '@nestjs/bullmq';
 import { Job } from 'bullmq';
+import { ObservabilityService } from '../../infrastructure/observability/observability.service';
 import { Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -29,8 +30,19 @@ export class WordBoosterConsumer extends WorkerHost {
     private readonly seenRepo: Repository<UserSeenWordEntity>,
     @InjectRepository(WordTranslationEntity)
     private readonly translationRepo: Repository<WordTranslationEntity>,
+    private readonly obs: ObservabilityService,
   ) {
     super();
+  }
+
+  @OnWorkerEvent('completed')
+  onCompleted(job: Job): void {
+    this.obs.recordQueueJob('word-booster', job, 'ok');
+  }
+
+  @OnWorkerEvent('failed')
+  onFailed(job: Job | undefined, err: Error): void {
+    if (job) this.obs.recordQueueJob('word-booster', job, 'failed', err);
   }
 
   async process(job: Job<WordJobData>): Promise<void> {

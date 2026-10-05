@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { GoogleGenerativeAI, GenerativeModel } from '@google/generative-ai';
 import { LoggerUtil } from '../logging/logger.util';
+import { ObservabilityService } from '../observability/observability.service';
 import type { WordDefinition, WordMeaning } from '../../domain/entities/word-definition.entity';
 import type { ChatTask, StoryTask, WritingMode, WritingTask } from '../../domain/entities/writing-task.entity';
 import type { WritingCorrection, WritingTurn } from '../../domain/entities/writing-activity.entity';
@@ -17,7 +18,10 @@ export class GeminiService {
   private readonly genAI: GoogleGenerativeAI;
   private readonly thinking: Record<string, unknown>;
 
-  constructor(private readonly configService: ConfigService) {
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly obs: ObservabilityService,
+  ) {
     const apiKey = this.configService.get<string>('GEMINI_API_KEY');
     this.modelName = this.configService.get<string>('GEMINI_MODEL', 'gemini-3.1-flash-lite-preview');
     this.apiKeyConfigured = !!apiKey && !apiKey.startsWith('your-');
@@ -53,6 +57,34 @@ export class GeminiService {
       model: this.modelName,
       generationConfig: { responseMimeType: 'application/json', ...thinking } as any,
     });
+  }
+
+  /** Records tokens and failures for every Gemini call; never changes the call's result. */
+  private async track<T extends { response: any }>(feature: string, call: () => Promise<T>): Promise<T> {
+    const started = Date.now();
+    try {
+      const result = await call();
+      const u = result.response?.usageMetadata ?? {};
+      this.obs.recordAi({
+        feature,
+        model: this.modelName,
+        inputTokens: u.promptTokenCount ?? 0,
+        outputTokens: u.candidatesTokenCount ?? 0,
+        thoughtTokens: u.thoughtsTokenCount ?? 0,
+        durationMs: Date.now() - started,
+        ok: true,
+      });
+      return result;
+    } catch (err: any) {
+      this.obs.recordAi({
+        feature,
+        model: this.modelName,
+        durationMs: Date.now() - started,
+        ok: false,
+        error: String(err?.message ?? err),
+      });
+      throw err;
+    }
   }
 
   get isConfigured(): boolean {
@@ -98,7 +130,7 @@ Return a JSON array:
 
     LoggerUtil.logGeminiRequest(this.logger, 'generatePoolQuestions', { topic, cefrLevel, count }, this.modelName);
     try {
-      const result = await this.jsonModel.generateContent(prompt);
+      const result = await this.track('generatePoolQuestions', () => this.jsonModel.generateContent(prompt));
       const parsed = parseLenientJson(result.response.text());
       const str = (v: unknown) => String(v ?? '').trim();
       const list: PoolQuestion[] = (Array.isArray(parsed) ? parsed : []).map((q: any) => ({
@@ -184,7 +216,7 @@ Schema:
       }
 
       LoggerUtil.logGeminiRequest(this.logger, 'generateQuizQuestions', { topic, cefrLevel, count }, this.modelName);
-      const result = await this.model.generateContent(prompt);
+      const result = await this.track('generateQuizQuestions', () => this.model.generateContent(prompt));
       const text = result.response.text().trim();
       LoggerUtil.logGeminiResponse(this.logger, 'generateQuizQuestions', text.length);
       // Strip markdown code blocks if present
@@ -227,7 +259,7 @@ Return JSON: { "feedback": string, "rule": string, "example": string }`;
 
     LoggerUtil.logGeminiRequest(this.logger, 'explainWrongAnswer', { cefrLevel, language }, this.modelName);
     try {
-      const result = await this.jsonModel.generateContent(prompt);
+      const result = await this.track('explainWrongAnswer', () => this.jsonModel.generateContent(prompt));
       const parsed: any = parseLenientJson(result.response.text());
       const str = (v: unknown) => String(v ?? '').trim();
       const out = { feedback: str(parsed?.feedback), rule: str(parsed?.rule), example: str(parsed?.example) };
@@ -312,7 +344,7 @@ STYLE
         history.unshift({ role: 'user', parts: [{ text: `Let's start the lesson on "${topic.name}".` }] });
       }
       const chat = model.startChat({ history });
-      const result = await chat.sendMessage(messages[messages.length - 1].content);
+      const result = await this.track('lessonReply', () => chat.sendMessage(messages[messages.length - 1].content));
       const reply = result.response.text().trim();
       if (!reply) throw new Error('Empty lesson reply');
       return reply;
@@ -346,7 +378,7 @@ Return JSON: { "word": "${word}", "phonetic": string, "meanings": [{ "partOfSpee
 
     LoggerUtil.logGeminiRequest(this.logger, 'defineWord', { word, cefrLevel }, this.modelName);
     try {
-      const result = await this.jsonModel.generateContent(prompt);
+      const result = await this.track('defineWord', () => this.jsonModel.generateContent(prompt));
       const parsed = JSON.parse(result.response.text());
       const str = (v: any) => String(v ?? '').trim();
       const meanings: WordMeaning[] = (Array.isArray(parsed.meanings) ? parsed.meanings : [])
@@ -420,7 +452,7 @@ Return ONLY valid JSON, no markdown:
       }
 
       LoggerUtil.logGeminiRequest(this.logger, 'generateDailyStory', { wordCount: words.length, cefrLevel }, this.modelName);
-      const result = await this.model.generateContent(prompt);
+      const result = await this.track('generateDailyStory', () => this.model.generateContent(prompt));
       const text = result.response.text().trim();
       LoggerUtil.logGeminiResponse(this.logger, 'generateDailyStory', text.length);
       const json = text.replace(/^```json?\n?/, '').replace(/\n?```$/, '');
@@ -466,7 +498,7 @@ Return ONLY a JSON array of 6 recommended topics:
       }
 
       LoggerUtil.logGeminiRequest(this.logger, 'generateLearningPath', { cefrLevel, interests: interests.length }, this.modelName);
-      const result = await this.model.generateContent(prompt);
+      const result = await this.track('generateLearningPath', () => this.model.generateContent(prompt));
       const text = result.response.text().trim();
       LoggerUtil.logGeminiResponse(this.logger, 'generateLearningPath', text.length);
       const json = text.replace(/^```json?\n?/, '').replace(/\n?```$/, '');
@@ -502,7 +534,7 @@ Return ONLY valid JSON in this exact format, no markdown, no extra text:
 {"content":"<question text>","options":["A) ...","B) ...","C) ...","D) ..."],"correctIndex":<0-3>,"explanation":"<why the answer is correct>"}`;
 
     try {
-      const result = await this.model.generateContent(prompt);
+      const result = await this.track('generateQuestionVariant', () => this.model.generateContent(prompt));
       const text = result.response.text().trim();
       // Strip markdown code blocks if present
       const json = text.replace(/^```json?\n?/, '').replace(/\n?```$/, '');
@@ -616,7 +648,7 @@ Return JSON with this shape:
 
     LoggerUtil.logGeminiRequest(this.logger, 'generateReadingActivity', { cefrLevel, interest }, this.modelName);
     try {
-      const result = await this.jsonModel.generateContent(prompt);
+      const result = await this.track('generateReadingActivity', () => this.jsonModel.generateContent(prompt));
       const text = result.response.text();
       LoggerUtil.logGeminiResponse(this.logger, 'generateReadingActivity', text.length);
       const parsed = JSON.parse(text);
@@ -716,7 +748,7 @@ Return JSON: { "title": string, "character": string, "setting": string, "goal": 
 
     LoggerUtil.logGeminiRequest(this.logger, 'generateWritingTask', { mode, cefrLevel }, this.modelName);
     try {
-      const result = await this.jsonModel.generateContent(prompt);
+      const result = await this.track('generateWritingTask', () => this.jsonModel.generateContent(prompt));
       const parsed = JSON.parse(result.response.text());
       const str = (v: any) => String(v ?? '').trim();
       const strList = (v: any) => (Array.isArray(v) ? v.map(str).filter(Boolean) : []);
@@ -837,7 +869,7 @@ Return JSON: { "ok": boolean, "corrected": string, "corrections": [{ "wrong": st
 
     LoggerUtil.logGeminiRequest(this.logger, 'evaluateWritingTurn', { mode: task.mode, cefrLevel }, this.modelName);
     try {
-      const result = await this.jsonModel.generateContent(prompt);
+      const result = await this.track('evaluateWritingTurn', () => this.jsonModel.generateContent(prompt));
       const parsed = JSON.parse(result.response.text());
       const str = (v: any) => String(v ?? '').trim();
       const corrections = (Array.isArray(parsed.corrections) ? parsed.corrections : [])
