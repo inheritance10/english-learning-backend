@@ -59,7 +59,7 @@ export class GetTopicsUseCase {
     const query = this.topicRepo.createQueryBuilder('topic')
       .where('topic.isActive = :active', { active: true })
       .select([
-        'topic.id', 'topic.name', 'topic.description', 'topic.category',
+        'topic.id', 'topic.name', 'topic.titleTr', 'topic.description', 'topic.category',
         'topic.cefrLevel', 'topic.cefrJLevel', 'topic.language',
         'topic.estimatedMinutes', 'topic.icon', 'topic.orderIndex', 'topic.isPremium',
       ]);

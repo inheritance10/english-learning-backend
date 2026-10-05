@@ -1,6 +1,12 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, Index } from 'typeorm';
 
-export type WritingMode = 'build' | 'chat' | 'story' | 'translate';
+export type WritingMode = 'build' | 'chat' | 'story' | 'scramble' | 'translate';
+
+/** Grammar topic an activity practises (from the topics table). */
+export interface WritingFocus {
+  name: string;
+  example?: string;
+}
 
 /** Sentence builder: one sentence per round using the given words. */
 export interface BuildTask {
@@ -32,12 +38,27 @@ export interface StoryTask {
   starters: string[][];
 }
 
-export type WritingTask = BuildTask | ChatTask | StoryTask;
+/** Word order game: put the shuffled words of a sentence back in order. */
+export interface ScrambleTask {
+  mode: 'scramble';
+  rounds: Array<{
+    /** The sentence as written, e.g. "She has never been to Paris." */
+    sentence: string;
+    /** Its meaning in the learner's UI language. */
+    hint: string;
+    /** The sentence's words in the right order, as shown on the tiles (no final punctuation). */
+    words: string[];
+    /** Final punctuation shown after the last tile ("." / "?" / "!"). */
+    end: string;
+  }>;
+}
+
+export type WritingTask = BuildTask | ChatTask | StoryTask | ScrambleTask;
 
 /**
  * Shared pool of AI-generated writing prompts. A task is generated once and
- * served to every learner with the same (mode, level, interest, language) who
- * has not done it yet.
+ * served to every learner with the same (mode, level, interest, topic, language)
+ * who has not done it yet.
  */
 @Entity('writing_tasks')
 @Index(['mode', 'cefrLevel', 'interest', 'language'])
@@ -56,6 +77,11 @@ export class WritingTaskEntity {
 
   @Column({ length: 2 })
   language: string;
+
+  /** Grammar topic the task practises; null for free practice. */
+  @Index()
+  @Column({ name: 'topic_id', type: 'uuid', nullable: true })
+  topicId: string | null;
 
   @Column()
   title: string;

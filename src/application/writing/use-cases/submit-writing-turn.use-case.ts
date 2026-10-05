@@ -14,10 +14,25 @@ import {
   WritingActivityEntity,
   WritingTurn,
 } from '../../../domain/entities/writing-activity.entity';
+import type { ScrambleTask, WritingMode, WritingTask } from '../../../domain/entities/writing-task.entity';
 import { UpdateStreakUseCase } from '../../progress/use-cases/update-streak.use-case';
 
 /** Tokens awarded per turn the learner gets right. */
-const TOKENS_PER_GOOD_TURN = 4;
+const TOKENS_PER_GOOD_TURN: Partial<Record<WritingMode, number>> = { scramble: 2 };
+const DEFAULT_TOKENS_PER_GOOD_TURN = 4;
+
+const normalizeOrder = (text: string) =>
+  text.toLowerCase().replace(/[.!?]+$/, '').replace(/\s+/g, ' ').trim();
+
+/** Word order game: the answer is right when the words are in the sentence's order. */
+function checkScramble(task: ScrambleTask, round: number, text: string): Omit<WritingTurn, 'userText'> {
+  const { sentence, words } = task.rounds[round];
+  return {
+    ok: normalizeOrder(text) === normalizeOrder(words.join(' ')),
+    corrected: sentence,
+    corrections: [],
+  };
+}
 
 export interface SubmitWritingTurnResult {
   turn: WritingTurn;
@@ -52,23 +67,10 @@ export class SubmitWritingTurnUseCase {
     const turnIndex = activity.turns.length;
     const isLastTurn = turnIndex === activity.totalTurns - 1;
 
-    let evaluation: Omit<WritingTurn, 'userText'>;
-    try {
-      evaluation = await this.gemini.evaluateWritingTurn({
-        task: activity.task,
-        round: turnIndex,
-        isLastTurn,
-        history: activity.turns,
-        userText: text,
-        cefrLevel: activity.cefrLevel,
-        language: (user.language ?? 'tr') as 'en' | 'tr',
-      });
-    } catch {
-      throw new ServiceUnavailableException({
-        code: 'WRITING_UNAVAILABLE',
-        message: 'Could not check your writing right now',
-      });
-    }
+    const evaluation =
+      activity.task.mode === 'scramble'
+        ? checkScramble(activity.task, turnIndex, text)
+        : await this.evaluateWithAi(activity.task, activity, turnIndex, isLastTurn, text, user);
 
     const turn: WritingTurn = { userText: text, ...evaluation };
     activity.turns = [...activity.turns, turn];
@@ -77,7 +79,8 @@ export class SubmitWritingTurnUseCase {
     if (isLastTurn) {
       activity.isCompleted = true;
       activity.completedAt = new Date();
-      activity.tokensEarned = activity.score * TOKENS_PER_GOOD_TURN;
+      activity.tokensEarned =
+        activity.score * (TOKENS_PER_GOOD_TURN[activity.mode] ?? DEFAULT_TOKENS_PER_GOOD_TURN);
     }
     await this.repo.save(activity);
 
@@ -106,5 +109,32 @@ export class SubmitWritingTurnUseCase {
       totalTurns: activity.totalTurns,
       tokensEarned: activity.tokensEarned,
     };
+  }
+
+  private async evaluateWithAi(
+    task: Exclude<WritingTask, ScrambleTask>,
+    activity: WritingActivityEntity,
+    turnIndex: number,
+    isLastTurn: boolean,
+    text: string,
+    user: UserEntity,
+  ): Promise<Omit<WritingTurn, 'userText'>> {
+    try {
+      return await this.gemini.evaluateWritingTurn({
+        task,
+        round: turnIndex,
+        isLastTurn,
+        history: activity.turns,
+        userText: text,
+        cefrLevel: activity.cefrLevel,
+        focus: activity.topicName ?? undefined,
+        language: (user.language ?? 'tr') as 'en' | 'tr',
+      });
+    } catch {
+      throw new ServiceUnavailableException({
+        code: 'WRITING_UNAVAILABLE',
+        message: 'Could not check your writing right now',
+      });
+    }
   }
 }

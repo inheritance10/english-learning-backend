@@ -52,6 +52,14 @@ export class WritingActivityEntity {
   @Column()
   interest: string;
 
+  /** Grammar topic being practised; null for free practice. */
+  @Column({ name: 'topic_id', type: 'uuid', nullable: true })
+  topicId: string | null;
+
+  /** Topic name in the learner's UI language, kept for headers and history. */
+  @Column({ name: 'topic_name', type: 'text', nullable: true })
+  topicName: string | null;
+
   @Column({ name: 'activity_type', default: 'build' })
   mode: WritingMode;
 

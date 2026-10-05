@@ -2,14 +2,17 @@ import {
   ForbiddenException,
   Injectable,
   Logger,
+  NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { MoreThanOrEqual, Repository } from 'typeorm';
+import { IsNull, MoreThanOrEqual, Repository } from 'typeorm';
 import { GeminiService } from '../../../infrastructure/gemini/gemini.service';
 import { UserEntity } from '../../../domain/entities/user.entity';
 import { WritingActivityEntity } from '../../../domain/entities/writing-activity.entity';
+import { TopicEntity } from '../../../domain/entities/topic.entity';
 import {
+  WritingFocus,
   WritingMode,
   WritingTask,
   WritingTaskEntity,
@@ -21,13 +24,14 @@ export interface StartWritingInput {
   mode: WritingMode;
   interest: string;
   cefrLevel?: string;
+  topicId?: string;
 }
 
 export const CHAT_TURNS = 4;
 export const STORY_TURNS = 3;
 
 export function totalTurnsFor(task: WritingTask): number {
-  if (task.mode === 'build') return task.rounds.length;
+  if (task.mode === 'build' || task.mode === 'scramble') return task.rounds.length;
   if (task.mode === 'story') return STORY_TURNS;
   return CHAT_TURNS;
 }
@@ -43,6 +47,8 @@ export class StartWritingUseCase {
     private readonly repo: Repository<WritingActivityEntity>,
     @InjectRepository(WritingTaskEntity)
     private readonly tasks: Repository<WritingTaskEntity>,
+    @InjectRepository(TopicEntity)
+    private readonly topics: Repository<TopicEntity>,
   ) {}
 
   async execute(input: StartWritingInput, user: UserEntity): Promise<WritingActivityEntity> {
@@ -50,6 +56,8 @@ export class StartWritingUseCase {
     const cefrLevel = input.cefrLevel ?? user.cefrLevel ?? 'A2';
     const language = (user.language ?? 'tr') as 'en' | 'tr';
     const interest = input.interest || 'everyday';
+    const topic = input.topicId ? await this.findTopic(input.topicId) : null;
+    const topicId = topic?.id ?? null;
 
     // Resuming today's unfinished activity does not consume another daily slot.
     const startOfDay = new Date();
@@ -60,6 +68,7 @@ export class StartWritingUseCase {
         mode,
         interest,
         cefrLevel,
+        topicId: topicId ?? IsNull(),
         isCompleted: false,
         createdAt: MoreThanOrEqual(startOfDay),
       },
@@ -76,9 +85,12 @@ export class StartWritingUseCase {
       });
     }
 
+    const focus: WritingFocus | null = topic
+      ? { name: topic.name, example: topic.description || undefined }
+      : null;
     const pooled =
-      (await this.findUndoneTask(user.id, mode, cefrLevel, interest, language)) ??
-      (await this.createTask(mode, cefrLevel, interest, language));
+      (await this.findUndoneTask(user.id, mode, cefrLevel, interest, topicId, language)) ??
+      (await this.createTask(mode, cefrLevel, interest, topicId, focus, language));
 
     return this.repo.save(
       this.repo.create({
@@ -87,6 +99,8 @@ export class StartWritingUseCase {
         mode,
         cefrLevel,
         interest,
+        topicId,
+        topicName: topic ? (language === 'tr' && topic.titleTr) || topic.name : null,
         scenario: pooled.title,
         task: pooled.task,
         turns: [],
@@ -95,11 +109,18 @@ export class StartWritingUseCase {
     );
   }
 
+  private async findTopic(topicId: string): Promise<TopicEntity> {
+    const topic = await this.topics.findOne({ where: { id: topicId, isActive: true } });
+    if (!topic) throw new NotFoundException('Topic not found');
+    return topic;
+  }
+
   private findUndoneTask(
     userId: string,
     mode: WritingMode,
     cefrLevel: string,
     interest: string,
+    topicId: string | null,
     language: string,
   ): Promise<WritingTaskEntity | null> {
     return this.tasks
@@ -107,6 +128,7 @@ export class StartWritingUseCase {
       .where('t.mode = :mode', { mode })
       .andWhere('t.cefr_level = :cefrLevel', { cefrLevel })
       .andWhere('t.interest = :interest', { interest })
+      .andWhere(topicId ? 't.topic_id = :topicId' : 't.topic_id IS NULL', { topicId })
       .andWhere('t.language = :language', { language })
       .andWhere(
         'NOT EXISTS (SELECT 1 FROM writing_activities a WHERE a.task_id = t.id AND a.user_id = :userId)',
@@ -120,29 +142,42 @@ export class StartWritingUseCase {
     mode: WritingMode,
     cefrLevel: string,
     interest: string,
+    topicId: string | null,
+    focus: WritingFocus | null,
     language: 'en' | 'tr',
   ): Promise<WritingTaskEntity> {
     if (!this.gemini.isConfigured) {
       throw new ServiceUnavailableException({ code: 'WRITING_UNAVAILABLE', message: 'AI is not configured' });
     }
     const existing = await this.tasks.find({
-      where: { mode, cefrLevel, interest, language },
+      where: { mode, cefrLevel, interest, language, topicId: topicId ?? IsNull() },
       select: { title: true },
       order: { createdAt: 'DESC' },
       take: 30,
     });
 
-    this.logger.log(`Generating writing task mode=${mode} level=${cefrLevel} interest=${interest}`);
+    this.logger.log(
+      `Generating writing task mode=${mode} level=${cefrLevel} interest=${interest} topic=${focus?.name ?? '-'}`,
+    );
     try {
       const generated = await this.gemini.generateWritingTask({
         mode,
         cefrLevel,
         interestLabel: interestLabel(interest, language),
         language,
+        focus: focus ?? undefined,
         avoidTitles: existing.map((t) => t.title),
       });
       return this.tasks.save(
-        this.tasks.create({ mode, cefrLevel, interest, language, title: generated.title, task: generated.task }),
+        this.tasks.create({
+          mode,
+          cefrLevel,
+          interest,
+          language,
+          topicId,
+          title: generated.title,
+          task: generated.task,
+        }),
       );
     } catch {
       throw new ServiceUnavailableException({
