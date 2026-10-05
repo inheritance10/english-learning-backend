@@ -19,7 +19,7 @@ export class GeminiService {
 
   constructor(private readonly configService: ConfigService) {
     const apiKey = this.configService.get<string>('GEMINI_API_KEY');
-    this.modelName = this.configService.get<string>('GEMINI_MODEL', 'gemini-2.5-flash');
+    this.modelName = this.configService.get<string>('GEMINI_MODEL', 'gemini-3.1-flash-lite-preview');
     this.apiKeyConfigured = !!apiKey && !apiKey.startsWith('your-');
     if (!this.apiKeyConfigured) {
       LoggerUtil.logInfo(
@@ -37,12 +37,18 @@ export class GeminiService {
 
     const genAI = new GoogleGenerativeAI(apiKey ?? 'mock');
     this.genAI = genAI;
-    this.model = genAI.getGenerativeModel({ model: this.modelName });
-    // thinkingConfig is not typed in @google/generative-ai 0.24 but is passed through to the API.
+    // Thinking tokens are billed as output. Quiz, reading, word and lesson calls don't need it,
+    // so it is turned off per model family. thinkingConfig isn't typed in the SDK but is passed through.
     const thinking = this.modelName.startsWith('gemini-3')
       ? { thinkingConfig: { thinkingLevel: 'minimal' } }
-      : {};
+      : this.modelName.startsWith('gemini-2.5')
+        ? { thinkingConfig: { thinkingBudget: 0 } }
+        : {};
     this.thinking = thinking;
+    this.model = genAI.getGenerativeModel({
+      model: this.modelName,
+      generationConfig: { ...thinking } as any,
+    });
     this.jsonModel = genAI.getGenerativeModel({
       model: this.modelName,
       generationConfig: { responseMimeType: 'application/json', ...thinking } as any,
