@@ -1,6 +1,19 @@
 import { Injectable, Logger } from '@nestjs/common';
 import * as admin from 'firebase-admin';
 
+/** Token artık geçerli değil (uygulama silindi, token yenilendi vb.). Yeniden denemenin anlamı yok. */
+export class InvalidFcmTokenError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'InvalidFcmTokenError';
+  }
+}
+
+const INVALID_TOKEN_CODES = [
+  'messaging/registration-token-not-registered',
+  'messaging/invalid-registration-token',
+];
+
 @Injectable()
 export class FcmNotificationService {
   private readonly logger = new Logger(FcmNotificationService.name);
@@ -46,14 +59,14 @@ export class FcmNotificationService {
 
   /**
    * Send a push notification directly to a single device token.
-   * Preferred over sendToTopic for per-user word notifications.
+   * Throws InvalidFcmTokenError when the token is dead; other errors are rethrown for retry.
    */
   async sendToDevice(
     fcmToken: string,
     title: string,
     body: string,
     data?: Record<string, string>,
-  ): Promise<string | null> {
+  ): Promise<string> {
     try {
       const message: admin.messaging.Message = {
         token: fcmToken,
@@ -82,8 +95,12 @@ export class FcmNotificationService {
       this.logger.log(`FCM sent to device: ${result}`);
       return result;
     } catch (error: any) {
+      if (INVALID_TOKEN_CODES.includes(error?.code)) {
+        throw new InvalidFcmTokenError(error.message);
+      }
+      // Geçici veya yapılandırma hataları (APNs, ağ vb.) yukarı iletilir; BullMQ yeniden dener
       this.logger.warn(`FCM send to device failed: ${error.message}`);
-      return null;
+      throw error;
     }
   }
 

@@ -8,7 +8,7 @@ import { NotificationEntity } from '../../domain/entities/notification.entity';
 import { UserEntity } from '../../domain/entities/user.entity';
 import { UserSeenWordEntity } from '../../domain/entities/user-seen-word.entity';
 import { WordTranslationEntity } from '../../domain/entities/word-translation.entity';
-import { FcmNotificationService } from '../../infrastructure/notifications/fcm-notification.service';
+import { FcmNotificationService, InvalidFcmTokenError } from '../../infrastructure/notifications/fcm-notification.service';
 import { WordQueueService, WordJobData } from './word-queue.service';
 import { WORD_BOOSTER_QUEUE } from './word-booster.producer';
 
@@ -114,6 +114,12 @@ export class WordBoosterConsumer extends WorkerHost {
     try {
       await this.fcmService.sendToDevice(user.fcmToken, title, body, data);
     } catch (err: any) {
+      if (err instanceof InvalidFcmTokenError) {
+        // Token artık geçersiz: temizle, yeni token uygulama açılışında gelir. Yeniden denemenin anlamı yok.
+        this.logger.warn(`User ${userId} FCM token is dead — clearing it`);
+        await this.userRepo.update(userId, { fcmToken: null as any });
+        return;
+      }
       this.logger.error(`FCM send failed for word "${word}": ${err.message}`);
       throw err;   // re-throw so BullMQ retries the job
     }
