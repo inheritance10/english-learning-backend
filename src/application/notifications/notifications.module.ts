@@ -5,6 +5,7 @@ import { WordEntity } from '../../domain/entities/word.entity';
 import { UserEntity } from '../../domain/entities/user.entity';
 import { NotificationEntity } from '../../domain/entities/notification.entity';
 import { UserSeenWordEntity } from '../../domain/entities/user-seen-word.entity';
+import { WordDefinitionEntity } from '../../domain/entities/word-definition.entity';
 import { WordTranslationEntity } from '../../domain/entities/word-translation.entity';
 import { FcmNotificationService } from '../../infrastructure/notifications/fcm-notification.service';
 import { WordNotificationScheduler } from './word-notification.scheduler';
@@ -23,6 +24,7 @@ import { AuthModule } from '../auth/auth.module';
       NotificationEntity,
       UserSeenWordEntity,
       WordTranslationEntity,
+      WordDefinitionEntity,
     ]),
     BullModule.registerQueue({ name: WORD_BOOSTER_QUEUE }),
     AuthModule,

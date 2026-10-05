@@ -8,6 +8,7 @@ import { NotificationEntity } from '../../domain/entities/notification.entity';
 import { UserEntity } from '../../domain/entities/user.entity';
 import { UserSeenWordEntity } from '../../domain/entities/user-seen-word.entity';
 import { WordTranslationEntity } from '../../domain/entities/word-translation.entity';
+import { WordDefinitionEntity, WordMeaning } from '../../domain/entities/word-definition.entity';
 import { FcmNotificationService, InvalidFcmTokenError } from '../../infrastructure/notifications/fcm-notification.service';
 import { WordQueueService, WordJobData } from './word-queue.service';
 import { WORD_BOOSTER_QUEUE } from './word-booster.producer';
@@ -30,6 +31,8 @@ export class WordBoosterConsumer extends WorkerHost {
     private readonly seenRepo: Repository<UserSeenWordEntity>,
     @InjectRepository(WordTranslationEntity)
     private readonly translationRepo: Repository<WordTranslationEntity>,
+    @InjectRepository(WordDefinitionEntity)
+    private readonly definitionRepo: Repository<WordDefinitionEntity>,
     private readonly obs: ObservabilityService,
   ) {
     super();
@@ -45,8 +48,26 @@ export class WordBoosterConsumer extends WorkerHost {
     if (job) this.obs.recordQueueJob('word-booster', job, 'failed', err);
   }
 
+  /** Anlam listesini word_definitions kaydından çıkarır. Eski kayıtlarda `meanings` yoksa üst alanları tek anlam sayar. */
+  private extractMeanings(def: WordDefinitionEntity['definition'] | undefined): WordMeaning[] {
+    if (!def) return [];
+    if (def.meanings?.length) return def.meanings.filter((m) => m.translation);
+    if (def.translation) {
+      return [{
+        partOfSpeech: def.partOfSpeech,
+        definition: def.definition,
+        translation: def.translation,
+        exampleSentence: def.exampleSentence,
+        exampleTranslation: def.exampleTranslation,
+      }];
+    }
+    return [];
+  }
+
   async process(job: Job<WordJobData>): Promise<void> {
     const { userId, wordId, word, level } = job.data;
+    /** Bildirimde en fazla bu kadar anlam gösterilir */
+    const MAX_NOTIFICATION_MEANINGS = 3;
 
     this.logger.debug(
       `Processing job ${job.id}: "${word}" → user ${userId} (${level})`,
@@ -91,26 +112,45 @@ export class WordBoosterConsumer extends WorkerHost {
       });
     }
 
-    const meaning = translation?.meaning ?? word;
-    const exampleSentence = translation?.exampleSentence ?? null;
+    // 3. Anlamlar: önce word_definitions önbelleği (çoklu anlam + örnekler). Gemini'ye gitmez.
+    const cached = await this.definitionRepo.findOne({
+      where: { word, cefrLevel: level, language: 'tr' },
+    });
+    const allMeanings = this.extractMeanings(cached?.definition);
+    const senses = allMeanings.slice(0, MAX_NOTIFICATION_MEANINGS);
 
-    // 3. Build notification content
-    const notifLevel = user.notificationLevel || user.cefrLevel || level;
-    const title = `📚 Word Booster · ${notifLevel}`;
-    const body = exampleSentence
-      ? `${word}: ${meaning} — "${exampleSentence}"`
-      : `${word}: ${meaning}`;
+    // Önbellek yoksa tek çeviriye düş (eski davranış)
+    const first = senses[0];
+    const meaning = first?.translation || translation?.meaning || word;
+    const exampleSentence = first?.exampleSentence || translation?.exampleSentence || null;
 
+    // 4. Build notification content
+    // Başlıkta kelimenin kendi seviyesi kullanılır (kullanıcı seviyesi değil)
+    const title = `📚 Word Booster · ${level}`;
+    const body =
+      senses.length > 1
+        ? `${word}\n` +
+          senses.map((m, i) => `${i + 1}. ${m.translation}`).join('\n') +
+          (exampleSentence ? `\n"${exampleSentence}"` : '')
+        : exampleSentence
+          ? `${word}: ${meaning} — "${exampleSentence}"`
+          : `${word}: ${meaning}`;
+
+    // FCM data alanı yalnızca string kabul eder
     const data: Record<string, string> = {
       wordId,
       word,
       meaning,
       level,
       type: 'word_booster',
+      meaningCount: String(allMeanings.length),
       ...(exampleSentence ? { exampleSentence } : {}),
     };
 
-    // 4. Send FCM push notification directly to user's device token
+    // Uygulama içi bildirim kutusu için tüm anlamlar da saklanır
+    const inboxData = { ...data, meanings: senses };
+
+    // 5. Send FCM push notification directly to user's device token
     try {
       await this.fcmService.sendToDevice(user.fcmToken, title, body, data);
     } catch (err: any) {
@@ -133,7 +173,7 @@ export class WordBoosterConsumer extends WorkerHost {
       throw err;   // re-throw so BullMQ retries the job
     }
 
-    // 5. Save to notification DB (user's in-app inbox)
+    // 6. Save to notification DB (user's in-app inbox)
     await this.notificationRepo
       .createQueryBuilder()
       .insert()
@@ -143,7 +183,7 @@ export class WordBoosterConsumer extends WorkerHost {
         title,
         body,
         type: 'word_booster',
-        data: data as Record<string, any>,
+        data: inboxData as Record<string, any>,
         isRead: false,
       })
       .execute();
