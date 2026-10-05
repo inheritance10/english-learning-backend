@@ -126,4 +126,58 @@ export class AdminQueriesUseCase {
       environment: this.config.get('NODE_ENV') ?? 'development',
     };
   }
+
+  /** API errors grouped by status and error code. */
+  async errorGroups(hours: number) {
+    return this.db.query(
+      `SELECT status_code AS "statusCode", error_code AS "errorCode", COUNT(*)::int AS count,
+              MAX(created_at) AS "lastSeen",
+              (ARRAY_AGG(path ORDER BY created_at DESC))[1] AS "samplePath",
+              (ARRAY_AGG(message ORDER BY created_at DESC))[1] AS "sampleMessage",
+              (ARRAY_AGG(method ORDER BY created_at DESC))[1] AS method
+         FROM api_errors WHERE created_at > now() - ($1::int * interval '1 hour')
+        GROUP BY status_code, error_code ORDER BY count DESC LIMIT 100`,
+      [hours],
+    );
+  }
+
+  async recentApiErrors(limit: number) {
+    return this.db.query(
+      `SELECT method, path, status_code AS "statusCode", error_code AS "errorCode", message,
+              user_id AS "userId", created_at AS "createdAt"
+         FROM api_errors ORDER BY created_at DESC LIMIT $1`,
+      [limit],
+    );
+  }
+
+  /** Gemini failures grouped by HTTP status embedded in the error text (e.g. 402, 429, 503). */
+  async geminiErrorGroups(hours: number) {
+    return this.db.query(
+      `SELECT feature, COALESCE(substring(error from '\\[(\\d{3})'), 'other') AS "httpStatus",
+              COUNT(*)::int AS count, MAX(created_at) AS "lastSeen",
+              (ARRAY_AGG(error ORDER BY created_at DESC))[1] AS "sampleError"
+         FROM ai_usage_logs WHERE NOT ok AND created_at > now() - ($1::int * interval '1 hour')
+        GROUP BY 1, 2 ORDER BY count DESC`,
+      [hours],
+    );
+  }
+
+  /** Failed jobs still held by BullMQ (with the reason BullMQ stored). */
+  async queueFailed(queueName: string, limit: number) {
+    const queue = this.queueByName(queueName);
+    if (!queue) return [];
+    const jobs = await queue.getFailed(0, limit - 1);
+    return jobs.map((j) => ({
+      id: j.id,
+      name: j.name,
+      reason: j.failedReason ?? 'unknown',
+      attempts: j.attemptsMade,
+      data: j.data,
+      failedAt: j.finishedOn ? new Date(j.finishedOn).toISOString() : null,
+    }));
+  }
+
+  private queueByName(name: string): Queue | null {
+    return ({ [QUESTION_POOL_QUEUE]: this.poolQueue, [WORD_BOOSTER_QUEUE]: this.wordQueue, [EXAM_PREP_QUEUE]: this.examQueue } as Record<string, Queue>)[name] ?? null;
+  }
 }

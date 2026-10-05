@@ -3,6 +3,8 @@ import { BullModule } from '@nestjs/bullmq';
 import { AdminController } from '../../presentation/controllers/admin.controller';
 import { AdminQueriesUseCase } from './use-cases/admin-queries.use-case';
 import { AdminKeyGuard } from '../../infrastructure/auth/admin-key.guard';
+import { AlertsService } from './alerts.service';
+import { MailService } from '../../infrastructure/mail/mail.service';
 import { QUESTION_POOL_QUEUE } from '../question-pool/question-pool.producer';
 import { WORD_BOOSTER_QUEUE } from '../notifications/word-booster.producer';
 import { EXAM_PREP_QUEUE } from '../exam-prep/exam-prep.producer';
@@ -14,6 +16,6 @@ import { EXAM_PREP_QUEUE } from '../exam-prep/exam-prep.producer';
     BullModule.registerQueue({ name: EXAM_PREP_QUEUE }),
   ],
   controllers: [AdminController],
-  providers: [AdminQueriesUseCase, AdminKeyGuard],
+  providers: [AdminQueriesUseCase, AdminKeyGuard, AlertsService, MailService],
 })
 export class AdminModule {}

@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import type { Job } from 'bullmq';
 import { AiUsageLogEntity } from '../../domain/entities/ai-usage-log.entity';
 import { JobRunEntity } from '../../domain/entities/job-run.entity';
+import { ApiErrorEntity } from '../../domain/entities/api-error.entity';
 
 const MAX_ERROR_LENGTH = 1000;
 
@@ -17,6 +18,8 @@ export class ObservabilityService {
     private readonly aiRepo: Repository<AiUsageLogEntity>,
     @InjectRepository(JobRunEntity)
     private readonly jobRepo: Repository<JobRunEntity>,
+    @InjectRepository(ApiErrorEntity)
+    private readonly errorRepo: Repository<ApiErrorEntity>,
   ) {}
 
   recordAi(entry: Partial<AiUsageLogEntity>): void {
@@ -29,6 +32,12 @@ export class ObservabilityService {
     this.jobRepo
       .insert({ ...entry, error: entry.error ? entry.error.slice(0, MAX_ERROR_LENGTH) : null })
       .catch((err) => this.logger.warn(`Job run not stored: ${err?.message}`));
+  }
+
+  recordApiError(entry: Partial<ApiErrorEntity>): void {
+    this.errorRepo
+      .insert(entry)
+      .catch((err) => this.logger.warn(`API error not stored: ${err?.message}`));
   }
 
   recordQueueJob(queue: string, job: Job, status: 'ok' | 'failed', err?: Error): void {

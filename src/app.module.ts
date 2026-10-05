@@ -35,6 +35,9 @@ import { RewardsModule } from './application/rewards/rewards.module';
 import { RewardPurchaseEntity } from './domain/entities/reward-purchase.entity';
 import { AiUsageLogEntity } from './domain/entities/ai-usage-log.entity';
 import { JobRunEntity } from './domain/entities/job-run.entity';
+import { ApiErrorEntity } from './domain/entities/api-error.entity';
+import { AllExceptionsFilter } from './infrastructure/errors/all-exceptions.filter';
+import { APP_FILTER } from '@nestjs/core';
 import { ObservabilityModule } from './infrastructure/observability/observability.module';
 import { AdminModule } from './application/admin/admin.module';
 import { WritingTaskEntity } from './domain/entities/writing-task.entity';
@@ -91,6 +94,7 @@ import { WritingModule } from './application/writing/writing.module';
             RewardPurchaseEntity,
             AiUsageLogEntity,
             JobRunEntity,
+            ApiErrorEntity,
             UserSeenQuestionEntity,
             WritingActivityEntity,
             WritingTaskEntity,
@@ -150,5 +154,6 @@ import { WritingModule } from './application/writing/writing.module';
     FeedbackModule,
     RewardsModule,
   ],
+  providers: [{ provide: APP_FILTER, useClass: AllExceptionsFilter }],
 })
 export class AppModule {}
