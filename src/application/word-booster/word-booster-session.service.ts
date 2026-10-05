@@ -51,15 +51,12 @@ export class WordBoosterSessionService {
     language: string,
   ): Promise<WordCard[]> {
     const cards: WordCard[] = [];
-    // Reviews stay within the chosen level (or easier) so switching down a level takes effect immediately
-    const reviewLevels = CEFR_ORDER.slice(0, Math.max(CEFR_ORDER.indexOf(level), 0) + 1);
-
-    // ── 1. SRS review words due now ──────────────────────────────────────────
+    // ── 1. SRS review words due now (only the chosen level; old-level reviews stay hidden) ──
     const reviewRecords = await this.srsRepo
       .createQueryBuilder('srs')
       .innerJoinAndSelect('srs.word', 'w')
       .where('srs.userId = :userId', { userId })
-      .andWhere('w.level IN (:...reviewLevels)', { reviewLevels })
+      .andWhere('w.level = :level', { level })
       .andWhere('srs.status != :mastered', { mastered: 'mastered' })
       .andWhere(
         '(srs.next_review_at IS NULL OR srs.next_review_at <= :now)',

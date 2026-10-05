@@ -70,7 +70,8 @@ export class WordBoosterController {
   @Get('today')
   @ApiOperation({ summary: 'Get today\'s word swipe deck (SRS + new words)' })
   async getTodayWords(@CurrentUser() user: UserEntity) {
-    const level = user.notificationLevel || user.cefrLevel || 'A1';
+    // Kullanıcının uygulamada seçtiği seviye (cefrLevel) kaynak alınır
+    const level = user.cefrLevel || user.notificationLevel || 'A1';
     const limit = user.wordNotificationCount || 5;
     const language = user.language ?? 'tr';
 
