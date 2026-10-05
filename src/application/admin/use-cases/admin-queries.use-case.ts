@@ -177,6 +177,15 @@ export class AdminQueriesUseCase {
     }));
   }
 
+  /** Puts every failed job of a queue back to waiting. Jobs still failing for the same reason fail again. */
+  async retryFailed(queueName: string): Promise<{ retried: number }> {
+    const queue = this.queueByName(queueName);
+    if (!queue) return { retried: 0 };
+    const before = await queue.getFailedCount();
+    await queue.retryJobs({ state: 'failed' });
+    return { retried: before };
+  }
+
   private queueByName(name: string): Queue | null {
     return ({ [QUESTION_POOL_QUEUE]: this.poolQueue, [WORD_BOOSTER_QUEUE]: this.wordQueue, [EXAM_PREP_QUEUE]: this.examQueue } as Record<string, Queue>)[name] ?? null;
   }

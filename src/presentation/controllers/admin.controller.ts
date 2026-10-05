@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Query, UseGuards, BadRequestException } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AdminQueriesUseCase } from '../../application/admin/use-cases/admin-queries.use-case';
 import { AdminKeyGuard } from '../../infrastructure/auth/admin-key.guard';
@@ -79,5 +79,12 @@ export class AdminController {
   @ApiOperation({ summary: 'Failed jobs in a queue with BullMQ failure reasons' })
   queueFailed(@Query('queue') queue = 'question-pool', @Query('limit') limit = '50') {
     return this.queries.queueFailed(queue, Math.min(Number(limit) || 50, 200));
+  }
+
+  @Post('queues/retry-failed')
+  @ApiOperation({ summary: 'Re-queue all failed jobs of one queue' })
+  retryFailed(@Query('queue') queue: string) {
+    if (!['question-pool', 'word-booster', 'exam-prep'].includes(queue)) throw new BadRequestException('Unknown queue');
+    return this.queries.retryFailed(queue);
   }
 }
