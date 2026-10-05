@@ -118,6 +118,15 @@ export class WordBoosterConsumer extends WorkerHost {
         // Token artık geçersiz: temizle, yeni token uygulama açılışında gelir. Yeniden denemenin anlamı yok.
         this.logger.warn(`User ${userId} FCM token is dead — clearing it`);
         await this.userRepo.update(userId, { fcmToken: null as any });
+        // Admin panelinde (Arka plan sekmesi) görünsün diye kayıt düşüyoruz
+        this.obs.recordJob({
+          name: 'fcm:token-cleared',
+          kind: 'queue',
+          status: 'ok',
+          startedAt: new Date(),
+          durationMs: 0,
+          meta: { userId, reason: 'invalid_token', word, jobId: job.id },
+        });
         return;
       }
       this.logger.error(`FCM send failed for word "${word}": ${err.message}`);
