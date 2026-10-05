@@ -52,22 +52,116 @@ export class AdminQueriesUseCase {
                   COALESCE(SUM(thought_tokens), 0)::bigint AS "thoughtTokens",
                   COUNT(*) FILTER (WHERE NOT ok)::int AS errors,
                   COALESCE(ROUND(AVG(duration_ms)), 0)::int AS "avgMs"`;
-    const [daily, byFeature, byModel, recentErrors] = await Promise.all([
-      this.db.query(`SELECT to_char(date_trunc('day', created_at), 'YYYY-MM-DD') AS day, ${cols}
-                       FROM ai_usage_logs WHERE ${window} GROUP BY 1 ORDER BY 1`, [days]),
-      this.db.query(`SELECT feature, ${cols} FROM ai_usage_logs WHERE ${window} GROUP BY 1 ORDER BY calls DESC`, [days]),
-      this.db.query(`SELECT model, ${cols} FROM ai_usage_logs WHERE ${window} GROUP BY 1 ORDER BY calls DESC`, [days]),
+    // Maliyet model bazında hesaplanır, bu yüzden gruplar her zaman model ile birlikte çekilir
+    const [dayModel, featureModel, recentErrors] = await Promise.all([
+      this.db.query(`SELECT to_char(date_trunc('day', created_at), 'YYYY-MM-DD') AS day, model, ${cols}
+                       FROM ai_usage_logs WHERE ${window} GROUP BY 1, 2 ORDER BY 1`, [days]),
+      this.db.query(`SELECT feature, model, ${cols} FROM ai_usage_logs WHERE ${window} GROUP BY 1, 2`, [days]),
       this.db.query(`SELECT feature, model, error, duration_ms AS "durationMs", created_at AS "createdAt"
                        FROM ai_usage_logs WHERE NOT ok AND ${window} ORDER BY created_at DESC LIMIT 30`, [days]),
     ]);
-    return { days, daily, byFeature, byModel, recentErrors, pricing: this.pricing() };
+
+    const pricing = this.pricing();
+    const daily = this.aggregate(dayModel, pricing, (r) => r.day);
+    const byFeature = this.aggregate(featureModel, pricing, (r) => r.feature).sort((a, b) => b.calls - a.calls);
+    const byModel = this.aggregate(featureModel, pricing, (r) => r.model).sort((a, b) => b.calls - a.calls);
+
+    const totals = byModel.reduce(
+      (t, m) => ({
+        calls: t.calls + m.calls,
+        costUsd: t.costUsd + (m.costUsd ?? 0),
+        unpricedCalls: t.unpricedCalls + (m.costUsd === null ? m.calls : 0),
+      }),
+      { calls: 0, costUsd: 0, unpricedCalls: 0 },
+    );
+    const costUsdTotal = totals.unpricedCalls === totals.calls ? null : totals.costUsd;
+
+    return {
+      days,
+      totals: {
+        calls: totals.calls,
+        costUsd: costUsdTotal,
+        costTry: costUsdTotal !== null && pricing.usdTry ? costUsdTotal * pricing.usdTry : null,
+        perCallUsd: costUsdTotal !== null && totals.calls > 0 ? costUsdTotal / (totals.calls - totals.unpricedCalls || 1) : null,
+        unpricedCalls: totals.unpricedCalls,
+      },
+      daily,
+      byFeature,
+      byModel,
+      recentErrors,
+      pricing: { usdTry: pricing.usdTry, models: pricing.models, fallback: pricing.fallback },
+    };
   }
 
-  /** Optional estimate: set GEMINI_PRICE_INPUT_PER_M / GEMINI_PRICE_OUTPUT_PER_M (USD per 1M tokens). */
+  /** Fiyatlar ortam değişkenlerinden okunur. Tanımsız model için maliyet null döner, panelde uyarı çıkar. */
   private pricing() {
-    const input = Number(this.config.get('GEMINI_PRICE_INPUT_PER_M'));
-    const output = Number(this.config.get('GEMINI_PRICE_OUTPUT_PER_M'));
-    return input > 0 && output > 0 ? { inputPerM: input, outputPerM: output } : null;
+    const num = (k: string) => {
+      const v = Number(this.config.get(k));
+      return v > 0 ? v : null;
+    };
+    let models: Record<string, { inputPerM: number; outputPerM: number }> = {};
+    try {
+      models = JSON.parse(this.config.get<string>('GEMINI_PRICES_JSON') || '{}');
+    } catch {
+      models = {};
+    }
+    const inputPerM = num('GEMINI_PRICE_INPUT_PER_M');
+    const outputPerM = num('GEMINI_PRICE_OUTPUT_PER_M');
+    return {
+      usdTry: num('USD_TRY'),
+      models,
+      fallback: inputPerM && outputPerM ? { inputPerM, outputPerM } : null,
+    };
+  }
+
+  private priceOf(model: string, pricing: ReturnType<AdminQueriesUseCase['pricing']>) {
+    return pricing.models[model] ?? pricing.fallback ?? null;
+  }
+
+  /** Satırları anahtara göre toplar ve her grup için token + maliyet hesaplar. */
+  private aggregate(
+    rows: Array<Record<string, any>>,
+    pricing: ReturnType<AdminQueriesUseCase['pricing']>,
+    keyOf: (r: Record<string, any>) => string,
+  ) {
+    const groups = new Map<string, { key: string; calls: number; inputTokens: number; outputTokens: number; thoughtTokens: number; errors: number; avgMsSum: number; costUsd: number | null; unpricedCalls: number }>();
+    for (const r of rows) {
+      const key = keyOf(r);
+      const g = groups.get(key) ?? { key, calls: 0, inputTokens: 0, outputTokens: 0, thoughtTokens: 0, errors: 0, avgMsSum: 0, costUsd: 0, unpricedCalls: 0 };
+      const price = this.priceOf(r.model, pricing);
+      const input = Number(r.inputTokens);
+      const output = Number(r.outputTokens) + Number(r.thoughtTokens);
+      g.calls += r.calls;
+      g.inputTokens += input;
+      g.outputTokens += Number(r.outputTokens);
+      g.thoughtTokens += Number(r.thoughtTokens);
+      g.errors += r.errors;
+      g.avgMsSum += r.avgMs * r.calls;
+      if (price) {
+        g.costUsd = (g.costUsd ?? 0) + (input * price.inputPerM + output * price.outputPerM) / 1_000_000;
+      } else {
+        g.unpricedCalls += r.calls;
+      }
+      groups.set(key, g);
+    }
+    return [...groups.values()].map((g) => {
+      const priced = g.calls - g.unpricedCalls;
+      const costUsd = priced > 0 ? g.costUsd : null;
+      return {
+        // Hem feature, model, day alanları için aynı anahtarı koruyoruz
+        feature: g.key, model: g.key, day: g.key,
+        calls: g.calls,
+        inputTokens: g.inputTokens,
+        outputTokens: g.outputTokens,
+        thoughtTokens: g.thoughtTokens,
+        errors: g.errors,
+        avgMs: g.calls ? Math.round(g.avgMsSum / g.calls) : 0,
+        costUsd,
+        costTry: costUsd !== null && pricing.usdTry ? costUsd * pricing.usdTry : null,
+        perCallUsd: costUsd !== null && priced > 0 ? costUsd / priced : null,
+        unpricedCalls: g.unpricedCalls,
+      };
+    });
   }
 
   async jobs(status: string | null, limit: number) {
