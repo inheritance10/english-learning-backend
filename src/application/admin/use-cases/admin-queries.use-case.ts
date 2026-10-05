@@ -81,7 +81,6 @@ export class AdminQueriesUseCase {
       totals: {
         calls: totals.calls,
         costUsd: costUsdTotal,
-        costTry: costUsdTotal !== null && pricing.usdTry ? costUsdTotal * pricing.usdTry : null,
         perCallUsd: costUsdTotal !== null && totals.calls > 0 ? costUsdTotal / (totals.calls - totals.unpricedCalls || 1) : null,
         unpricedCalls: totals.unpricedCalls,
       },
@@ -89,7 +88,7 @@ export class AdminQueriesUseCase {
       byFeature,
       byModel,
       recentErrors,
-      pricing: { usdTry: pricing.usdTry, models: pricing.models, fallback: pricing.fallback },
+      pricing: { models: pricing.models, fallback: pricing.fallback },
     };
   }
 
@@ -108,7 +107,6 @@ export class AdminQueriesUseCase {
     const inputPerM = num('GEMINI_PRICE_INPUT_PER_M');
     const outputPerM = num('GEMINI_PRICE_OUTPUT_PER_M');
     return {
-      usdTry: num('USD_TRY'),
       models,
       fallback: inputPerM && outputPerM ? { inputPerM, outputPerM } : null,
     };
@@ -157,7 +155,6 @@ export class AdminQueriesUseCase {
         errors: g.errors,
         avgMs: g.calls ? Math.round(g.avgMsSum / g.calls) : 0,
         costUsd,
-        costTry: costUsd !== null && pricing.usdTry ? costUsd * pricing.usdTry : null,
         perCallUsd: costUsd !== null && priced > 0 ? costUsd / priced : null,
         unpricedCalls: g.unpricedCalls,
       };

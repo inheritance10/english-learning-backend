@@ -24,6 +24,16 @@ import { SrsService } from './srs.service';
 import { WordBoosterSessionService } from './word-booster-session.service';
 import { GeminiService } from '../../infrastructure/gemini/gemini.service';
 import { WORD_BOOSTER_QUEUE } from '../notifications/word-booster.producer';
+import { Inject } from '@nestjs/common';
+import Redis from 'ioredis';
+import { REDIS_CLIENT } from '../../infrastructure/redis/redis.module';
+
+/** Story üretim kuralları: yeniden üretim için en az N yeni kelime, günde en fazla X üretim. */
+const STORY_RULES = {
+  freeThreshold: 3,
+  subscriberThreshold: 1,
+  dailyCap: 1,
+};
 
 class SwipeDto {
   @IsString()
@@ -64,6 +74,7 @@ export class WordBoosterController {
     private readonly translationRepo: Repository<WordTranslationEntity>,
     @InjectQueue(WORD_BOOSTER_QUEUE)
     private readonly queue: Queue,
+    @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {}
 
   // ── GET /word-booster/today ────────────────────────────────────────────────
@@ -137,25 +148,31 @@ export class WordBoosterController {
 
   // ── GET /word-booster/story/today ─────────────────────────────────────────
   @Get('story/today')
-  @ApiOperation({ summary: 'Get today\'s daily story (if generated)' })
+  @ApiOperation({ summary: 'Get today\'s daily story and how many new words wait for the next one' })
   async getTodayStory(@CurrentUser() user: UserEntity) {
     const today = this.getToday();
-    const [story, unknownWords] = await Promise.all([
+    const [story, unknownWords, generatedToday] = await Promise.all([
       this.storyRepo.findOne({ where: { userId: user.id, storyDate: today } }),
       this.getTodayUnknownWords(user.id),
+      this.storyGenerationsToday(user.id, today),
     ]);
 
-    // New unknown words since the story was written → offer a fresh story instead
-    if (!story || this.hasNewWords(story.words, unknownWords)) {
-      return { story: null, unknownWords };
-    }
+    const pendingWords = story ? unknownWords.filter((w) => !story.words.includes(w)) : unknownWords;
+    const threshold = this.storyThreshold(user, story);
+    const canRegenerate = pendingWords.length >= threshold && generatedToday < STORY_RULES.dailyCap;
 
-    return { story, unknownWords: story.words };
+    return {
+      story,
+      unknownWords: story ? story.words : unknownWords,
+      pendingWords: pendingWords.length,
+      threshold,
+      canRegenerate,
+    };
   }
 
   // ── POST /word-booster/story/generate ─────────────────────────────────────
   @Post('story/generate')
-  @ApiOperation({ summary: 'Generate a daily story from today\'s unknown words' })
+  @ApiOperation({ summary: 'Generate a daily story from today\'s unknown words (rate limited)' })
   async generateStory(@CurrentUser() user: UserEntity) {
     const today = this.getToday();
 
@@ -163,23 +180,41 @@ export class WordBoosterController {
       this.storyRepo.findOne({ where: { userId: user.id, storyDate: today } }),
       this.getTodayUnknownWords(user.id),
     ]);
-    if (existing && !this.hasNewWords(existing.words, unknownWords)) {
-      return { story: existing };
-    }
 
     if (unknownWords.length === 0) {
-      return { story: null, message: 'Bugün henüz bilmediğin kelime yok!' };
+      return { story: existing ?? null, reason: 'no_words', message: 'Bugün henüz bilmediğin kelime yok!' };
     }
 
-    const language = (user.language ?? 'tr') as 'en' | 'tr';
+    const pendingWords = existing ? unknownWords.filter((w) => !existing.words.includes(w)) : unknownWords;
+    if (existing && pendingWords.length === 0) {
+      return { story: existing, reason: 'up_to_date', pendingWords: 0 };
+    }
 
-    // Generate story via Gemini
-    const generated = await this.geminiService.generateDailyStory({
-      words: unknownWords,
-      cefrLevel: user.cefrLevel ?? 'B1',
-      language,
-      userInterests: user.interests ?? [],
-    });
+    const threshold = this.storyThreshold(user, existing);
+    if (existing && pendingWords.length < threshold) {
+      return { story: existing, reason: 'not_enough_new_words', pendingWords: pendingWords.length, threshold };
+    }
+
+    const generatedToday = await this.storyGenerationsToday(user.id, today);
+    if (generatedToday >= STORY_RULES.dailyCap) {
+      return { story: existing ?? null, reason: 'daily_limit', pendingWords: pendingWords.length, threshold };
+    }
+
+    // Gemini ile hikâye üret (yalnızca bu noktada maliyet oluşur)
+    const language = (user.language ?? 'tr') as 'en' | 'tr';
+    let generated: { title: string; content: string; wordHighlights: string[] };
+    try {
+      generated = await this.geminiService.generateDailyStory({
+        words: unknownWords,
+        cefrLevel: user.cefrLevel ?? 'B1',
+        language,
+        userInterests: user.interests ?? [],
+      });
+    } catch (err: any) {
+      // Üretim başarısız: kayıt yok, günlük hak tüketilmez
+      this.logger.warn(`Story generation failed for user ${user.id}: ${err?.message}`);
+      return { story: existing ?? null, reason: 'error', pendingWords: pendingWords.length, threshold };
+    }
 
     // One story per user per day (unique index) — overwrite today's row when regenerating
     const story = this.storyRepo.merge(existing ?? this.storyRepo.create({ userId: user.id, storyDate: today }), {
@@ -190,7 +225,37 @@ export class WordBoosterController {
     });
 
     await this.storyRepo.save(story);
-    return { story };
+    await this.incrementStoryGenerations(user.id, today);
+    return { story, reason: 'generated', pendingWords: 0 };
+  }
+
+  /** Yeniden üretim eşiği: ilk hikâye için 1 kelime yeterli, sonrakiler için kullanıcı tipine göre. */
+  private storyThreshold(user: UserEntity, existing: StoryEntity | null): number {
+    if (!existing) return 1;
+    return user.isSubscribed ? STORY_RULES.subscriberThreshold : STORY_RULES.freeThreshold;
+  }
+
+  private storyCountKey(userId: string, day: string): string {
+    return `story:gen:${userId}:${day}`;
+  }
+
+  /** Redis hatasında 0 döner (üretimi engellemez). */
+  private async storyGenerationsToday(userId: string, day: string): Promise<number> {
+    try {
+      return Number((await this.redis.get(this.storyCountKey(userId, day))) ?? 0);
+    } catch (err: any) {
+      this.logger.warn(`Story generation counter read failed: ${err?.message}`);
+      return 0;
+    }
+  }
+
+  private async incrementStoryGenerations(userId: string, day: string): Promise<void> {
+    const key = this.storyCountKey(userId, day);
+    try {
+      await this.redis.multi().incr(key).expire(key, 2 * 86_400).exec();
+    } catch (err: any) {
+      this.logger.warn(`Story generation counter update failed: ${err?.message}`);
+    }
   }
 
   private hasNewWords(storyWords: string[], unknownWords: string[]): boolean {

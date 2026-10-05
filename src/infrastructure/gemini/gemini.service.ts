@@ -459,11 +459,8 @@ Return ONLY valid JSON, no markdown:
       return JSON.parse(json);
     } catch (err: any) {
       LoggerUtil.logGeminiError(this.logger, 'generateDailyStory', err, { wordCount: words.length });
-      return {
-        title: "Today's Story",
-        content: `Today's words: ${wordList}`,
-        wordHighlights: words,
-      };
+      // Yedek metin kaydedilmesin ve hak tüketilmesin diye hatayı yukarı iletiyoruz
+      throw err;
     }
   }
 
